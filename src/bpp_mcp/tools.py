@@ -20,7 +20,19 @@ from .catalog import (
 )
 from .client import BppClient, BppError, BppNotFound
 
+# Twardy górny sufit ``limit`` dla narzędzi listujących/wyszukujących. BPP nie
+# deklaruje ``max_limit`` po stronie DRF, więc bez tego clampa ``limit=1_000_000``
+# poszłoby wprost do paginacji i mogłoby zdmuchnąć instancję. Paginacja i tak
+# stronicuje porcjami (``PAGE_LIMIT``), ten sufit ogranicza łączną liczbę pozycji.
+MAKS_LIMIT = 200
 MAKS_LIMIT_RECENT = 100
+
+
+def _clamp_limit(limit: int, sufit: int = MAKS_LIMIT) -> int:
+    """Przytnij ``limit`` do przedziału ``[1, sufit]`` (obrona przed skrajnymi
+    wartościami wysadzającymi instancję / przed ``limit <= 0``)."""
+    return max(1, min(limit, sufit))
+
 
 _KOMUNIKAT_BRAK_SZUKAJ = (
     "Ta instancja BPP nie udostępnia endpointu /szukaj/ — wymaga wersji "
@@ -70,13 +82,14 @@ async def szukaj_publikacji(
     Miękka degradacja: gdy instancja BPP nie ma jeszcze Fazy 0, endpoint
     zwraca 404 → podnosimy czytelny :class:`BppError` (nie traceback).
     """
+    limit = _clamp_limit(limit)
     params = {"q": q, **_zakres_roku(rok_od, rok_do)}
     try:
-        wyniki = await client.get_paginated("szukaj/", params, limit)
+        wyniki, laczna = await client.get_paginated("szukaj/", params, limit)
     except BppNotFound as exc:
         raise BppError(_KOMUNIKAT_BRAK_SZUKAJ) from exc
     wyniki = [_dopisz_typ_i_pk(dict(w)) for w in wyniki]
-    return {"count": len(wyniki), "wyniki": wyniki}
+    return {"laczna_liczba": laczna, "zwrocono": len(wyniki), "wyniki": wyniki}
 
 
 async def szukaj_autora(client: BppClient, nazwisko: str) -> dict[str, Any]:
@@ -90,7 +103,7 @@ async def szukaj_autora(client: BppClient, nazwisko: str) -> dict[str, Any]:
     bieżące ``nazwisko`` (świadomie NIE ``poprzednie_nazwiska`` w v1).
     """
     try:
-        autorzy = await client.get_paginated(
+        autorzy, laczna = await client.get_paginated(
             "autor/", {"nazwisko": nazwisko}, limit=MAKS_LIMIT_RECENT
         )
     except BppNotFound as exc:
@@ -99,7 +112,8 @@ async def szukaj_autora(client: BppClient, nazwisko: str) -> dict[str, Any]:
         ) from exc
     podejrzanie_duzo = len(autorzy) >= MAKS_LIMIT_RECENT
     return {
-        "count": len(autorzy),
+        "laczna_liczba": laczna,
+        "zwrocono": len(autorzy),
         "mozliwe_ze_niefiltrowane": podejrzanie_duzo,
         "autorzy": autorzy,
     }
@@ -114,7 +128,7 @@ async def _publikacje_encji(
     limit: int,
     czytelny_404: str,
 ) -> dict[str, Any]:
-    limit = max(1, min(limit, MAKS_LIMIT_RECENT))
+    limit = _clamp_limit(limit, MAKS_LIMIT_RECENT)
     params = {"limit": limit, **_zakres_roku(rok_od, rok_do)}
     try:
         dane = await client.get_json(
@@ -125,8 +139,9 @@ async def _publikacje_encji(
     publikacje = [
         _znormalizuj_pozycje_recent(dict(p)) for p in dane.get("publications", [])
     ]
-    # recent_* ma twardy sufit 100 i brak offsetu — sygnalizujemy obcięcie.
-    obcieto = len(publikacje) == limit == MAKS_LIMIT_RECENT
+    # recent_* ma twardy sufit 100 i brak offsetu — dobicie do żądanego ``limit``
+    # (nie tylko do 100) sygnalizuje, że mogą istnieć dalsze, nieujawnione pozycje.
+    obcieto = len(publikacje) >= limit
     wynik = {k: v for k, v in dane.items() if k != "publications"}
     wynik["obcieto"] = obcieto
     wynik["publikacje"] = publikacje
@@ -222,6 +237,13 @@ async def pobierz_rekord(
         raise BppError(
             f"Nieznany typ rekordu '{typ}'. Dozwolone: {', '.join(TYPY_REKORDOW)}."
         )
+    # Waliduj id ZANIM trafi do interpolacji ścieżki — inaczej np. id="../autor/5"
+    # skleiłoby nieoczekiwany URL (path traversal poza zamierzony endpoint).
+    if not str(id).isdigit():
+        raise BppError(
+            f"Nieprawidłowy identyfikator '{id}' — oczekiwano liczby całkowitej "
+            "(PK rekordu)."
+        )
     try:
         detal = await client.get_json(f"{spec.endpoint}/{id}/", use_cache=False)
     except BppNotFound as exc:
@@ -273,8 +295,23 @@ async def lista_publikacji(
     zakres roku są wspierane dla ``wydawnictwo_ciagle`` / ``wydawnictwo_zwarte``;
     patenty i prace dr/hab filtrują węziej (``rok`` / ``ostatnio_zmieniony``).
     """
-    if typ not in CATALOG:
+    spec = CATALOG.get(typ)
+    if spec is None:
         raise BppError(f"Nieznany typ '{typ}'. Dozwolone: {', '.join(TYPY_REKORDOW)}.")
+    # django-filter CICHO ignoruje nieobsługiwane parametry, więc doklejenie
+    # charakter_formalny do typu, który go nie filtruje (patent / praca dr/hab),
+    # dałoby fałszywie „przefiltrowany" wynik. Odrzucamy jawnie zamiast milczeć.
+    chf_niewspierany = (
+        charakter_formalny is not None
+        and "charakter_formalny" not in spec.filtry_dodatkowe
+    )
+    if chf_niewspierany:
+        raise BppError(
+            f"Typ '{typ}' nie wspiera filtra 'charakter_formalny' "
+            "(obsługują go tylko wydawnictwo_ciagle i wydawnictwo_zwarte). "
+            "Usuń ten filtr albo wybierz jeden z tych dwóch typów."
+        )
+    limit = _clamp_limit(limit)
     params: dict[str, Any] = {}
     if rok_od is not None:
         params["rok_min"] = rok_od
@@ -286,8 +323,13 @@ async def lista_publikacji(
         params["ostatnio_zmieniony_after"] = zmienione_po
     if offset:
         params["offset"] = offset
-    wyniki = await client.get_paginated(f"{typ}/", params, limit)
-    return {"count": len(wyniki), "typ": typ, "wyniki": wyniki}
+    wyniki, laczna = await client.get_paginated(f"{typ}/", params, limit)
+    return {
+        "laczna_liczba": laczna,
+        "zwrocono": len(wyniki),
+        "typ": typ,
+        "wyniki": wyniki,
+    }
 
 
 async def slownik(client: BppClient, rodzaj: str) -> dict[str, Any]:

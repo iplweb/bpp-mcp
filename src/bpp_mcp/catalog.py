@@ -34,6 +34,13 @@ class TypRekordu:
     relacje_pojedyncze: tuple[str, ...] = ()
     # Relacje 1:N — lista URL-i do rozwinięcia w listę obiektów.
     relacje_wielokrotne: tuple[str, ...] = ()
+    # Białe listy filtrów opcjonalnych (poza uniwersalnym zakresem roku
+    # i ``zmienione_po``) faktycznie honorowanych przez django-filter danego
+    # endpointu. django-filter CICHO ignoruje nieznane parametry, więc
+    # doklejenie np. ``charakter_formalny`` do typu, który go nie filtruje,
+    # dałoby fałszywie „przefiltrowany" wynik. Sterują walidacją w
+    # :func:`bpp_mcp.tools.lista_publikacji`.
+    filtry_dodatkowe: frozenset[str] = frozenset()
 
 
 CATALOG: dict[str, TypRekordu] = {
@@ -43,6 +50,7 @@ CATALOG: dict[str, TypRekordu] = {
         autorzy="autorzy_set",
         relacje_pojedyncze=("zrodlo",),
         relacje_wielokrotne=("streszczenia", "zewnetrzna_baza_danych"),
+        filtry_dodatkowe=frozenset({"charakter_formalny"}),
     ),
     # Wydawnictwo zwarte: NIE ma zrodlo ani zewnetrzna_baza_danych; ma serię.
     # ``wydawnictwo_nadrzedne`` świadomie NIE rozwijane (ryzyko rekurencji) —
@@ -52,6 +60,7 @@ CATALOG: dict[str, TypRekordu] = {
         autorzy="autorzy_set",
         relacje_pojedyncze=("seria_wydawnicza",),
         relacje_wielokrotne=("streszczenia",),
+        filtry_dodatkowe=frozenset({"charakter_formalny"}),
     ),
     # Patent: tylko autorzy (through). rodzaj_prawa/zasieg są inline (string).
     "patent": TypRekordu(
@@ -97,6 +106,26 @@ SLOWNIKI_WOLUMENOWE: tuple[str, ...] = (
     "zrodlo",
     "autor",
     "jednostka",
+)
+
+
+# Biała lista prefiksów endpointów, których odpowiedzi wolno cache'ować w
+# procesie (:meth:`bpp_mcp.client.BppClient.get_json`). To WYŁĄCZNIE stabilne,
+# powtarzalnie odpytywane tabele referencyjne / encje słownikowe (jednostka,
+# źródło, wydawca, słowniki). Świadomie POZA whitelistą: rekordy publikacji,
+# streszczenia, tabele through-autorów oraz raporty ``recent_*`` — to dane
+# zmienne albo jednorazowe, których cache'owanie tylko puchłoby i groziło
+# staleness. Brak prefiksu na liście ⇒ odpowiedź NIE ląduje w cache, nawet
+# przy ``use_cache=True``.
+PREFIKSY_CACHOWALNE: frozenset[str] = frozenset(SLOWNIKI) | frozenset(
+    {
+        "jednostka",
+        "zrodlo",
+        "wydawca",
+        "seria_wydawnicza",
+        "konferencja",
+        "nagroda",
+    }
 )
 
 

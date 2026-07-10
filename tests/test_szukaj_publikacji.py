@@ -24,7 +24,8 @@ async def test_szukaj_publikacji_happy(client):
             json={"count": 1, "next": None, "results": [_pozycja()]}
         )
         wynik = await tools.szukaj_publikacji(client, "nowotwór", limit=25)
-    assert wynik["count"] == 1
+    assert wynik["laczna_liczba"] == 1
+    assert wynik["zwrocono"] == 1
     poz = wynik["wyniki"][0]
     # typ + pk rozłożone z rekord_url (mapa ct→typ dynamicznie, nie hardkod)
     assert poz["typ"] == "wydawnictwo_ciagle"
@@ -35,7 +36,8 @@ async def test_szukaj_publikacji_pusty(client):
     with respx.mock(base_url=API_ROOT, assert_all_called=False) as mock:
         mock.get("/szukaj/").respond(json={"count": 0, "next": None, "results": []})
         wynik = await tools.szukaj_publikacji(client, "xyzzy")
-    assert wynik["count"] == 0
+    assert wynik["laczna_liczba"] == 0
+    assert wynik["zwrocono"] == 0
     assert wynik["wyniki"] == []
 
 
@@ -72,5 +74,6 @@ async def test_szukaj_publikacji_paginacja_wielostronicowa(client):
             httpx.Response(200, json=strona2),
         ]
         wynik = await tools.szukaj_publikacji(client, "x", limit=25)
-    assert wynik["count"] == 3
+    assert wynik["laczna_liczba"] == 3
+    assert wynik["zwrocono"] == 3
     assert route.call_count == 2
