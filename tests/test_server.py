@@ -1,7 +1,7 @@
 from bpp_mcp.server import mcp
 
 
-async def test_zarejestrowano_siedem_narzedzi():
+async def test_zarejestrowano_osiem_narzedzi():
     narzedzia = await mcp.list_tools()
     nazwy = {n.name for n in narzedzia}
     assert nazwy == {
@@ -12,4 +12,5 @@ async def test_zarejestrowano_siedem_narzedzi():
         "pobierz_rekord",
         "lista_publikacji",
         "slownik",
+        "djangoql_schema",
     }

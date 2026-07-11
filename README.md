@@ -82,6 +82,7 @@ claude mcp add bpp \
 | `pobierz_rekord(typ, id, pelne_dane_autorow=False)` | detal rekordu z rozwiniętymi relacjami |
 | `lista_publikacji(typ, rok_od?, rok_do?, charakter_formalny?, zmienione_po?, limit=25, offset=0)` | harvest/przyrost listy publikacji |
 | `slownik(rodzaj)` | mały słownik referencyjny (tłumaczenie ID↔nazwa) |
+| `djangoql_schema(model="rekord")` | schemat DjangoQL-dla-LLM modelu Rekord (do budowy zapytań) |
 
 `typ` w `pobierz_rekord` / `lista_publikacji`: `wydawnictwo_ciagle`,
 `wydawnictwo_zwarte`, `patent`, `praca_doktorska`, `praca_habilitacyjna`.
@@ -105,7 +106,43 @@ claude mcp add bpp \
 - **`publikacje_autora` / `publikacje_jednostki`** mają twardy sufit 100
   pozycji (endpoint `recent_*`). Przy dobiciu do limitu zwracana jest flaga
   `obcieto: true` — pełny harvest per autor rób przez `lista_publikacji`
-  z chunkowaniem po latach.
+  z chunkowaniem po latach. Endpoint `recent_*` NIE zwraca łącznej liczby
+  prac encji (jego `count` to tylko liczba pozycji po obcięciu), dlatego
+  narzędzie eksponuje wyłącznie `zwrocono` (liczba zwróconych) + `obcieto`,
+  bez mylącego `count`.
+- **`szukaj_publikacji` / `szukaj_autora` / `lista_publikacji`** zwracają
+  `laczna_liczba` (serwerowy `count` — realna liczba trafień), `zwrocono`
+  (ile faktycznie przyszło) oraz flagę `niepelne`. `niepelne: true` oznacza,
+  że auto-follow paginacji przerwał bezpiecznik (sufit liczby stron / zapętlony
+  `next`) zanim objął wszystko — wynik może być niekompletny.
+
+## DjangoQL — schemat do budowy zapytań (`djangoql_schema`)
+
+`djangoql_schema()` zwraca zbundlowany, bezpieczny schemat modelu `bpp.Rekord`
+dla języka [DjangoQL](https://github.com/ivelum/djangoql): reguły gramatyki
+(operatory per typ, negacja, trawersowanie relacji, sufiksy `__year` / `__count`
+itd.), pola z typami oraz sekcję `dictionaries` z dozwolonymi WARTOŚCIAMI
+wyłącznie bezpiecznych słowników zamkniętych (charaktery, dyscypliny, języki,
+licencje OA…). W schemacie NIE ma żadnych danych osób ani instytucji.
+
+Dzięki temu LLM może zbudować PRECYZYJNE zapytanie, np.:
+
+```text
+rok >= 2020 and jezyk.nazwa = "angielski" and impact_factor > 0
+```
+
+- **Konstrukcja tak — wykonanie NIE.** To narzędzie tylko *buduje* zapytania.
+  Samo *wykonanie* wyszukiwania DjangoQL (funkcja „zapytanie" w BPP) jest dziś
+  dostępne WYŁĄCZNIE dla użytkownika **zalogowanego** i nie istnieje w publicznym,
+  anonimowym API — dlatego serwer nie ma narzędzia je uruchamiającego. Gdy
+  anon-API zyska taką możliwość, dołożymy osobne `zapytanie(query)` (miejsce
+  oznaczone `TODO` w `server.py`).
+- **Wersjonowanie.** Pierwsza linia schematu to `# BPP <wersja>` (np.
+  `# BPP 202607.1397`). Plik jest generowany per wersja BPP i powinien pasować
+  do odpytywanej instancji. Źródło: repo
+  [iplweb/bpp-schema-for-llm](https://github.com/iplweb/bpp-schema-for-llm)
+  (schemat przeskanowany — bez danych osobowych). Plik jest zbundlowany jako
+  zasób pakietu (`bpp_mcp/data/`) i wczytywany przez `importlib.resources`.
 
 ## Rozwój
 

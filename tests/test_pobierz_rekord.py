@@ -196,6 +196,14 @@ async def test_pobierz_rekord_odrzuca_niepoprawny_id(client):
     assert "identyfikator" in str(exc.value).lower()
 
 
+async def test_pobierz_rekord_odrzuca_cyfre_unicode(client):
+    # "٣" (arabsko-indyjska 3) ma isdigit()==True, ale nie jest ASCII 0-9 —
+    # nie może trafić do URL-a. Walidacja wymusza czyste ASCII (B3).
+    with pytest.raises(BppError) as exc:
+        await tools.pobierz_rekord(client, "wydawnictwo_ciagle", "١٢٣")
+    assert "identyfikator" in str(exc.value).lower()
+
+
 async def test_pobierz_rekord_nieznany_typ(client):
     with pytest.raises(BppError) as exc:
         await tools.pobierz_rekord(client, "cos_dziwnego", "1")

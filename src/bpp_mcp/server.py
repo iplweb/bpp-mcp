@@ -131,6 +131,28 @@ async def slownik(ctx: Context, rodzaj: str) -> dict[str, Any]:
     return await tools.slownik(_client(ctx), rodzaj)
 
 
+@mcp.tool()
+async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
+    """Zwróć zbundlowany schemat DjangoQL-dla-LLM modelu bpp.Rekord: reguły
+    języka DjangoQL + pola/typy/operatory/relacje + dozwolone WARTOŚCI wyłącznie
+    bezpiecznych słowników (ZERO danych osób/instytucji). Służy do KONSTRUKCJI
+    precyzyjnych zapytań — wersja schematu jest w nagłówku (``# BPP <wersja>``).
+
+    UWAGA: samo WYKONANIE zapytania DjangoQL („zapytanie") w BPP wymaga
+    ZALOGOWANEGO użytkownika i nie ma go jeszcze w publicznym anon-API — to
+    narzędzie tylko buduje zapytania, nie uruchamia ich."""
+    # Zasób lokalny (dane pakietu) — brak I/O sieciowego, więc nie potrzebuje
+    # BppClient z lifespan-contextu.
+    return await tools.djangoql_schema(model)
+
+
+# TODO(anon-API): gdy publiczne API BPP zyska wykonywanie zapytań DjangoQL dla
+# użytkownika anonimowego, dołożyć tu narzędzie ``zapytanie(query: str)``
+# delegujące do np. ``tools.zapytanie`` (POST/GET do endpointu wyszukiwania).
+# Konfiguracja endpointu → catalog.py / config.py. Dziś funkcja „zapytanie"
+# jest tylko dla zalogowanych, więc świadomie NIE rejestrujemy tego narzędzia.
+
+
 def main() -> None:
     """Punkt wejścia konsoli (``bpp-mcp``) — uruchamia serwer po stdio."""
     mcp.run()

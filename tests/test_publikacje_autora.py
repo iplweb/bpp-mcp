@@ -35,6 +35,10 @@ async def test_publikacje_autora_happy(client):
         wynik = await tools.publikacje_autora(client, "5")
     assert wynik["autor_nazwa"] == "Jan Kowalski"
     assert wynik["obcieto"] is False
+    # ``count`` z endpointu (len PO obcięciu) NIE przecieka jako mylący total —
+    # eksponujemy tylko ``zwrocono`` (B1).
+    assert "count" not in wynik
+    assert wynik["zwrocono"] == 2
     assert len(wynik["publikacje"]) == 2
     # id "(6, 1)" rozłożone na content_type_id + pk
     assert wynik["publikacje"][0]["content_type_id"] == 6

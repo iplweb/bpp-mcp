@@ -34,6 +34,9 @@ async def test_publikacje_jednostki_happy(client):
         )
         wynik = await tools.publikacje_jednostki(client, "katedra-x")
     assert wynik["jednostka_nazwa"] == "Katedra X"
+    # Mylący serwerowy ``count`` wycięty; ekspozycja tylko ``zwrocono`` (B1).
+    assert "count" not in wynik
+    assert wynik["zwrocono"] == 1
     assert len(wynik["publikacje"]) == 1
     assert wynik["publikacje"][0]["content_type_id"] == 6
 

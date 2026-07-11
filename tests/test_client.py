@@ -91,10 +91,37 @@ async def test_get_paginated_obcina_w_pol_strony(client):
             httpx.Response(200, json=strona1),
             httpx.Response(200, json=strona2),
         ]
-        zebrane, laczna = await client.get_paginated("wydawnictwo_ciagle/", limit=3)
+        zebrane, laczna, niepelne = await client.get_paginated(
+            "wydawnictwo_ciagle/", limit=3
+        )
     assert [p["id"] for p in zebrane] == [1, 2, 3]
     assert laczna == 5
+    assert niepelne is False
     assert route.call_count == 2
+
+
+async def test_get_paginated_niepelne_gdy_bezpiecznik(client):
+    # Serwer oddaje krótkie strony (po 1 wyniku) i NIGDY nie zeruje ``next`` —
+    # bezpiecznik ``maks_stron`` przerwie pętlę przed dobiciem limitu, a metoda
+    # sygnalizuje to flagą ``niepelne=True`` (B2). limit=10, page_limit=5 →
+    # per_page=5, maks_stron=10//5+2=4 → co najwyżej 4 żądania, ~4 wyniki.
+    def _strona(i):
+        return {
+            "count": 999,
+            "next": f"{API_ROOT}/wydawnictwo_ciagle/?limit=5&offset={i}",
+            "results": [{"id": i}],
+        }
+
+    with respx.mock(base_url=API_ROOT, assert_all_called=False) as mock:
+        route = mock.get("/wydawnictwo_ciagle/")
+        route.side_effect = [httpx.Response(200, json=_strona(i)) for i in range(6)]
+        zebrane, laczna, niepelne = await client.get_paginated(
+            "wydawnictwo_ciagle/", limit=10, page_limit=5
+        )
+    assert niepelne is True
+    assert laczna == 999
+    assert len(zebrane) < 10  # przerwano przed dobiciem limitu
+    assert route.call_count == 4  # maks_stron
 
 
 async def test_cache_nie_rosnie_dla_rekordow(client):

@@ -8,6 +8,7 @@ testować narzędzia bezpośrednio pod respx, bez stawiania serwera.
 from __future__ import annotations
 
 import asyncio
+from importlib import resources
 from typing import Any
 
 from .catalog import (
@@ -32,6 +33,29 @@ def _clamp_limit(limit: int, sufit: int = MAKS_LIMIT) -> int:
     """Przytnij ``limit`` do przedziału ``[1, sufit]`` (obrona przed skrajnymi
     wartościami wysadzającymi instancję / przed ``limit <= 0``)."""
     return max(1, min(limit, sufit))
+
+
+# Zbundlowane schematy DjangoQL-dla-LLM (dane pakietu w ``bpp_mcp/data/``).
+# Mapa ``model → nazwa pliku``. Na razie tylko ``rekord`` (bpp.Rekord); klucz
+# jest tu, by dołożenie kolejnych modeli było jedną linią. Źródło pliku:
+# repo iplweb/bpp-schema-for-llm (generowane z instancji BPP, przeskanowane —
+# wartości wyłącznie bezpiecznych słowników, ZERO danych osób/instytucji).
+_SCHEMATY_DJANGOQL: dict[str, str] = {
+    "rekord": "rekord_djangoql_schema.compact.txt",
+}
+
+
+def _wczytaj_schemat_djangoql(model: str) -> str:
+    """Wczytaj zbundlowany plik schematu przez ``importlib.resources`` (nie
+    ścieżki względne — działa też z zainstalowanego wheela / zip-a)."""
+    nazwa_pliku = _SCHEMATY_DJANGOQL[model]
+    # Kotwiczymy na pakiecie ``bpp_mcp`` i schodzimy do ``data/`` — nie wymaga,
+    # by ``data`` był osobnym (sub)pakietem z ``__init__.py``.
+    return (
+        resources.files("bpp_mcp")
+        .joinpath("data", nazwa_pliku)
+        .read_text(encoding="utf-8")
+    )
 
 
 _KOMUNIKAT_BRAK_SZUKAJ = (
@@ -85,11 +109,16 @@ async def szukaj_publikacji(
     limit = _clamp_limit(limit)
     params = {"q": q, **_zakres_roku(rok_od, rok_do)}
     try:
-        wyniki, laczna = await client.get_paginated("szukaj/", params, limit)
+        wyniki, laczna, niepelne = await client.get_paginated("szukaj/", params, limit)
     except BppNotFound as exc:
         raise BppError(_KOMUNIKAT_BRAK_SZUKAJ) from exc
     wyniki = [_dopisz_typ_i_pk(dict(w)) for w in wyniki]
-    return {"laczna_liczba": laczna, "zwrocono": len(wyniki), "wyniki": wyniki}
+    return {
+        "laczna_liczba": laczna,
+        "zwrocono": len(wyniki),
+        "niepelne": niepelne,
+        "wyniki": wyniki,
+    }
 
 
 async def szukaj_autora(client: BppClient, nazwisko: str) -> dict[str, Any]:
@@ -103,7 +132,7 @@ async def szukaj_autora(client: BppClient, nazwisko: str) -> dict[str, Any]:
     bieżące ``nazwisko`` (świadomie NIE ``poprzednie_nazwiska`` w v1).
     """
     try:
-        autorzy, laczna = await client.get_paginated(
+        autorzy, laczna, niepelne = await client.get_paginated(
             "autor/", {"nazwisko": nazwisko}, limit=MAKS_LIMIT_RECENT
         )
     except BppNotFound as exc:
@@ -114,6 +143,7 @@ async def szukaj_autora(client: BppClient, nazwisko: str) -> dict[str, Any]:
     return {
         "laczna_liczba": laczna,
         "zwrocono": len(autorzy),
+        "niepelne": niepelne,
         "mozliwe_ze_niefiltrowane": podejrzanie_duzo,
         "autorzy": autorzy,
     }
@@ -142,7 +172,12 @@ async def _publikacje_encji(
     # recent_* ma twardy sufit 100 i brak offsetu — dobicie do żądanego ``limit``
     # (nie tylko do 100) sygnalizuje, że mogą istnieć dalsze, nieujawnione pozycje.
     obcieto = len(publikacje) >= limit
-    wynik = {k: v for k, v in dane.items() if k != "publications"}
+    # ``count`` z endpointu recent_* to len(wynik) PO obcięciu (nie łączna liczba
+    # prac encji) — mylące dla LLM-a. Wycinamy je i eksponujemy jako ``zwrocono``
+    # (liczba faktycznie zwróconych), spójnie z innymi narzędziami. Łączny total
+    # NIE jest dostępny z tego endpointu API — stąd tylko ``zwrocono`` + ``obcieto``.
+    wynik = {k: v for k, v in dane.items() if k not in ("publications", "count")}
+    wynik["zwrocono"] = len(publikacje)
     wynik["obcieto"] = obcieto
     wynik["publikacje"] = publikacje
     return wynik
@@ -239,7 +274,10 @@ async def pobierz_rekord(
         )
     # Waliduj id ZANIM trafi do interpolacji ścieżki — inaczej np. id="../autor/5"
     # skleiłoby nieoczekiwany URL (path traversal poza zamierzony endpoint).
-    if not str(id).isdigit():
+    # ``str.isdigit()`` przepuszcza cyfry unicode (np. "٣".isdigit() == True), które
+    # trafiłyby do URL-a jako nie-ASCII — wymuszamy więc czyste ASCII 0-9.
+    id_str = str(id)
+    if not (id_str.isascii() and id_str.isdigit()):
         raise BppError(
             f"Nieprawidłowy identyfikator '{id}' — oczekiwano liczby całkowitej "
             "(PK rekordu)."
@@ -323,10 +361,11 @@ async def lista_publikacji(
         params["ostatnio_zmieniony_after"] = zmienione_po
     if offset:
         params["offset"] = offset
-    wyniki, laczna = await client.get_paginated(f"{typ}/", params, limit)
+    wyniki, laczna, niepelne = await client.get_paginated(f"{typ}/", params, limit)
     return {
         "laczna_liczba": laczna,
         "zwrocono": len(wyniki),
+        "niepelne": niepelne,
         "typ": typ,
         "wyniki": wyniki,
     }
@@ -349,3 +388,35 @@ async def slownik(client: BppClient, rodzaj: str) -> dict[str, Any]:
     dane = await client.get_json(f"{rodzaj}/", params={"limit": 500})
     pozycje = dane.get("results", dane) if isinstance(dane, dict) else dane
     return {"rodzaj": rodzaj, "count": len(pozycje), "pozycje": pozycje}
+
+
+async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
+    """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego modelu (na razie
+    tylko ``rekord`` = ``bpp.Rekord``).
+
+    Zawartość zwracanego tekstu:
+
+    * reguły języka DjangoQL (operatory per typ, negacja, trawersowanie
+      relacji, sufiksy ``__year``/``__count`` itd.) — z nagłówka pliku,
+    * listę pól modelu Rekord z typami i (dla relacji) polem dopasowania,
+    * sekcję ``dictionaries`` — dozwolone WARTOŚCI wyłącznie dla bezpiecznych
+      słowników zamkniętych (charaktery, dyscypliny, języki, licencje OA…);
+      ZERO danych osób/instytucji.
+
+    Po co: pozwala zbudować PRECYZYJNE zapytanie DjangoQL (np.
+    ``rok >= 2020 and jezyk.nazwa = "angielski" and impact_factor > 0``)
+    zamiast zgadywać nazwy pól i dozwolone wartości.
+
+    UWAGA — samo WYKONANIE zapytania nie jest tu dostępne. Wyszukiwanie
+    DjangoQL („zapytanie") w BPP jest dziś funkcją WYŁĄCZNIE dla użytkownika
+    ZALOGOWANEGO i nie ma go w publicznym, anonimowym API. To narzędzie służy
+    tylko do KONSTRUKCJI zapytań; gdy anon-API zyska wykonywanie, dołożymy
+    osobne narzędzie ``zapytanie(query)`` (patrz TODO w server.py). Wersja
+    schematu jest w pierwszej linii nagłówka (``# BPP <wersja>``) — musi
+    pasować do wersji odpytywanej instancji BPP.
+    """
+    if model not in _SCHEMATY_DJANGOQL:
+        dostepne = ", ".join(_SCHEMATY_DJANGOQL)
+        raise BppError(f"Nieznany model schematu '{model}'. Dostępne: {dostepne}.")
+    tekst = _wczytaj_schemat_djangoql(model)
+    return {"model": model, "schemat": tekst}

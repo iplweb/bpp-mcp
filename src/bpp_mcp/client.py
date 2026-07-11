@@ -174,7 +174,7 @@ class BppClient:
         limit: int = 25,
         *,
         page_limit: int = PAGE_LIMIT,
-    ) -> tuple[list[Any], int]:
+    ) -> tuple[list[Any], int, bool]:
         """Auto-follow paginacji ``LimitOffset`` do zebrania ``limit`` pozycji.
 
         Stronicuje porcjami po ``min(page_limit, limit)`` (NIE żąda całego
@@ -182,9 +182,15 @@ class BppClient:
         ``next`` aż do wyczerpania stron (``next == null``) lub osiągnięcia
         ``limit``. Strony list nie są cache'owane (zmienne, jednorazowe).
 
-        Zwraca krotkę ``(zebrane, laczna_liczba)``, gdzie ``laczna_liczba`` to
-        serwerowy ``count`` z pierwszej strony (rzeczywista liczba trafień
-        po stronie BPP, ≠ ``len(zebrane)`` przy obcięciu do ``limit``).
+        Zwraca krotkę ``(zebrane, laczna_liczba, niepelne)``:
+
+        * ``laczna_liczba`` — serwerowy ``count`` z pierwszej strony
+          (rzeczywista liczba trafień po stronie BPP, ≠ ``len(zebrane)`` przy
+          obcięciu do ``limit``),
+        * ``niepelne`` — ``True`` gdy pętlę przerwał BEZPIECZNIK (sufit liczby
+          stron / powtórzony ``next``) mimo że ``next`` był wciąż niepusty, więc
+          pobranie mogło NIE objąć wszystkiego, co było w zasięgu ``limit``.
+          ``False`` przy naturalnym końcu (``next == null``) lub dobiciu limitu.
 
         Bezpieczniki przed zapętleniem zbugowanego serwera:
 
@@ -202,8 +208,14 @@ class BppClient:
         pierwsza = True
         poprzedni_url: str | None = None
         strony = 0
+        niepelne = False
         while url is not None and len(zebrane) < limit:
             if strony >= maks_stron or url == poprzedni_url:
+                # Przerwanie przez bezpiecznik (NIE naturalne next=null ani
+                # dobicie limitu): ``next`` wciąż wskazuje kolejną stronę, ale
+                # zatrzymujemy się, by nie zapętlić się na zbugowanym serwerze.
+                # Sygnalizujemy, że pobranie może być niepełne.
+                niepelne = True
                 break
             poprzedni_url = url
             if pierwsza:
@@ -224,4 +236,4 @@ class BppClient:
         zebrane = zebrane[:limit]
         if laczna is None:
             laczna = len(zebrane)
-        return zebrane, laczna
+        return zebrane, laczna, niepelne
