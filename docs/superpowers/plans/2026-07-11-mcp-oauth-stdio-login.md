@@ -1561,3 +1561,299 @@ wrapperach spójny Task 5.
 
 **Placeholder scan:** brak TBD/TODO; każdy krok kodu ma pełny kod, każdy test ma
 pełną treść, każda komenda ma oczekiwany wynik.
+
+---
+
+## Poprawki po 2× adwersarialnym review Fable (MUST APPLY)
+
+Oba review'y (SDK/OAuth + testy/pokrycie) uzgodnione. `W4` (reuse `client_id` z
+nowym portem loopbacku) **odrzucone jako nie-bug**: DOT 3.3.0
+`redirect_to_uri_allowed` jest port-agnostic dla `http://127.0.0.1`/`::1` (RFC
+8252 §7.3, zweryfikowane w źródle). Plan używa `127.0.0.1` (NIE `localhost`,
+który NIE jest port-agnostic) — reuse zostaje. Loopback-pod-respx zweryfikowany
+probem: `respx.route(host="127.0.0.1").pass_through()` działa (respx 0.23.1).
+
+Poniższe poprawki nadpisują odpowiednie fragmenty Tasków 1–7.
+
+### [K1] Task 5 — napraw istniejący test `tests/test_http_auth.py`
+Dopisz do **Files/Modify** Task 5: `tests/test_http_auth.py`. Test
+`test_client_ustawia_bearer_z_biezacego_requestu` jest **synchroniczny** i
+`_client` po zmianie na async zwróci coroutine → FAIL. Zamień go na:
+```python
+@pytest.mark.asyncio
+async def test_client_ustawia_bearer_z_biezacego_requestu():
+    from bpp_mcp.server import KontekstApp
+
+    auth.set_current_bearer(None)
+    req = types.SimpleNamespace(headers={"authorization": "Bearer TOKEN_XYZ"})
+    rc = types.SimpleNamespace(
+        request=req,
+        lifespan_context=KontekstApp(client="SENTINEL", bearer_provider=None),
+    )
+    ctx = types.SimpleNamespace(request_context=rc)
+    assert await _client(ctx) == "SENTINEL"
+    assert auth.current_bearer() == "TOKEN_XYZ"
+    auth.set_current_bearer(None)
+```
+(Step 4 Task 5: uruchom też `tests/test_http_auth.py` — musi być zielony.)
+
+### [K2] Task 1 — `store_path` normalizuje `base_url`
+Trailing slash w `BPP_BASE_URL` rozjeżdżał hash zapisu vs odczytu. Zmień:
+```python
+def store_path(base_url: str) -> Path:
+    klucz = hashlib.sha256(base_url.rstrip("/").encode("utf-8")).hexdigest()[:16]
+    return _config_home() / "bpp-mcp" / klucz / "tokens.json"
+```
+Dodaj test: `assert token_store.store_path("https://x/") == token_store.store_path("https://x")`.
+
+### [K3]+[W3] Task 4 — `bearer()` re-loaduje store (pod lockiem)
+`TokenProvider` czytał store raz → token zapisany przez `bpp-mcp login` w trakcie
+żywej sesji nie był podnoszony (hint „ponów" martwy); dodatkowo padły refresh
+mógł skasować świeży token innego procesu. Zamień `bearer` na:
+```python
+    async def bearer(self) -> str | None:
+        ts = self._ts
+        if ts is not None and not ts.is_expired():
+            return ts.access_token
+        async with self._lock:
+            # (K3) token mógł się pojawić (login w trakcie sesji) lub zmienić
+            # (inny proces MCP na tym samym store) po starcie — re-load.
+            dysk = token_store.load(self._base_url)
+            if dysk is not None and (
+                self._ts is None or dysk.access_token != self._ts.access_token
+            ):
+                self._ts = dysk
+            ts = self._ts
+            if ts is None:
+                return None
+            if not ts.is_expired():
+                return ts.access_token
+            try:
+                nowy = await asyncio.to_thread(self._refresh_fn, ts)
+            except oauth_client.RefreshFailed as exc:
+                # (W3) nie kasuj świeżego tokenu, który zapisał inny proces.
+                dysk = token_store.load(self._base_url)
+                if dysk is not None and dysk.access_token != ts.access_token:
+                    self._ts = dysk
+                    if not dysk.is_expired():
+                        return dysk.access_token
+                token_store.clear(self._base_url)
+                self._ts = None
+                print(
+                    f"bpp-mcp: sesja wygasła ({exc}) — tryb anonimowy. "
+                    "Zaloguj ponownie: bpp-mcp login",
+                    file=sys.stderr,
+                )
+                return None
+            token_store.save(nowy)
+            self._ts = nowy
+            return nowy.access_token
+```
+Dodaj test: provider utworzony bez tokenu → `token_store.save(_ts())` z zewnątrz →
+kolejny `await prov.bearer()` zwraca `"AT"` (re-load w trakcie sesji).
+
+### [W1]+[D7] Task 1 — twarde 0600 przy nadpisie; `clear` sprząta tmp
+`os.open(mode=…)` działa tylko przy tworzeniu — leftover `tokens.tmp` z 0644
+przeżyłby. Wymuś `fchmod` i posprzątaj tmp:
+```python
+def save(ts: TokenSet) -> None:
+    path = store_path(ts.base_url)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(path.parent, 0o700)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)  # wymuś 0600 nawet gdy tmp istniał z luźniejszymi prawami
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(asdict(ts), fh)
+    os.replace(tmp, path)  # atomowo; zachowuje 0600 z tmp
+
+
+def clear(base_url: str) -> None:
+    path = store_path(base_url)
+    for p in (path, path.with_suffix(".tmp")):
+        try:
+            p.unlink()
+        except FileNotFoundError:
+            pass
+```
+Dodaj test: `save` tokenem A → `save` tokenem B → `load().access_token == "B"`
+oraz `S_IMODE == 0o600` (nadpis utrzymuje uprawnienia).
+
+### [W2] Task 2 — test refresh BEZ rotacji (zachowuje stary RT)
+```python
+@respx.mock
+def test_refresh_bez_rotacji_zachowuje_stary_rt():
+    ts = TokenSet(
+        base_url=BASE, access_token="A", refresh_token="RT_STARY", expires_at=0.0,
+        token_endpoint=f"{BASE}/o/token/", client_id="CID",
+    )
+    respx.post(f"{BASE}/o/token/").mock(
+        return_value=httpx.Response(200, json={"access_token": "NOWY", "expires_in": 1800})
+    )
+    assert oauth_client.refresh(ts).refresh_token == "RT_STARY"
+```
+
+### [W7]+[D-refresh] Task 2 — `register_client` dołącza treść błędu; `refresh` fail-fast na braku `client_id`
+```python
+def register_client(meta, redirect_uri, *, client_name="bpp-mcp", client=None) -> str:
+    if not meta.registration_endpoint:
+        raise RuntimeError("Instancja BPP nie udostępnia rejestracji (DCR).")
+    cli, owns = _client_ctx(client)
+    try:
+        resp = cli.post(
+            meta.registration_endpoint,
+            json={"client_name": client_name, "redirect_uris": [redirect_uri]},
+        )
+        if resp.status_code >= 400:
+            tresc = " ".join(resp.text.split())[:300]
+            raise RuntimeError(f"Rejestracja klienta odrzucona ({resp.status_code}): {tresc}")
+        return resp.json()["client_id"]
+    finally:
+        if owns:
+            cli.close()
+```
+W `refresh`, tuż po sprawdzeniu `refresh_token`:
+```python
+    if not ts.client_id:
+        raise RefreshFailed("Brak client_id — wymagane ponowne logowanie.")
+```
+Dodaj testy: `register_client` z 429 → `RuntimeError` z fragmentem ciała;
+`register_client` gdy `registration_endpoint is None` → `RuntimeError`.
+
+### [D5] Task 2 — test `_whoami` na błędzie sieci
+```python
+@respx.mock
+def test_whoami_siec_none():
+    respx.get(f"{BASE}/api/v1/whoami/").mock(side_effect=httpx.ConnectError("x"))
+    assert oauth_client._whoami(BASE, "AT") is None
+```
+
+### [W5]+[W9] Task 3 — testy: skip-DCR i payload token-exchange
+W `test_login_pelny_flow` przechwyć route tokenu i zasertuj payload:
+```python
+    token_route = respx.post(f"{BASE}/o/token/").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "AT", "refresh_token": "RT", "expires_in": 1800}
+        )
+    )
+    # ... po login():
+    body = dict(urllib.parse.parse_qsl(token_route.calls.last.request.content.decode()))
+    assert body["grant_type"] == "authorization_code"
+    assert body["code"] == "KOD"
+    assert body["code_verifier"]           # PKCE verifier, nie challenge
+    assert body["redirect_uri"].startswith("http://127.0.0.1:")
+```
+Nowy test skip-DCR:
+```python
+@respx.mock
+def test_login_existing_client_id_pomija_dcr():
+    _meta()
+    reg = respx.post(f"{BASE}/o/register/")
+    respx.post(f"{BASE}/o/token/").mock(
+        return_value=httpx.Response(200, json={"access_token": "AT", "expires_in": 1800})
+    )
+    respx.get(f"{BASE}/api/v1/whoami/").mock(
+        return_value=httpx.Response(200, json={"username": "x"})
+    )
+    respx.route(host="127.0.0.1").pass_through()
+    ts = oauth_client.login(
+        BASE, existing_client_id="CID", open_browser=_fake_browser(), timeout=10.0
+    )
+    assert ts.client_id == "CID"
+    assert reg.call_count == 0
+```
+
+### [W8] Task 1 — globalna izolacja store w `tests/conftest.py`
+Po Task 5 lifespan tworzy `TokenProvider` → `token_store.load()`, więc KAŻDY test
+serwera bez izolacji czytałby realny `~/.config`. Dodaj do `tests/conftest.py`:
+```python
+@pytest.fixture(autouse=True)
+def _izolacja_config(tmp_path, monkeypatch):
+    """Izoluj token_store od realnego ~/.config w każdym teście."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+```
+Per-plikowe fixtury `_izolacja` w test_token_store/test_login_state stają się
+redundantne (można zostawić — nieszkodliwe), ale w `test_cli.py` ZACHOWAJ
+ustawienie `BPP_BASE_URL`.
+
+### [D-KeyError] Task 6 — `_cmd_login` łapie też `KeyError`
+Zdeformowana odpowiedź AS (brak `token_endpoint`/`client_id`/`access_token`) daje
+`KeyError`. Rozszerz tuple:
+```python
+    except (httpx.HTTPError, ValueError, TimeoutError, RuntimeError, KeyError) as exc:
+```
+
+### [D1]/[E501] Task 5(e) i Task 6 — zawiń długie linie
+Task 5(e) lifespan:
+```python
+        provider = (
+            TokenProvider(config.base_url) if config.transport != "http" else None
+        )
+```
+Task 6 testy — zamiast lambd w `setattr`:
+```python
+    def _fake(cfg):
+        called["login"] = cfg
+    monkeypatch.setattr(server, "_cmd_login", _fake)
+```
+```python
+    def _run(*a, **k):
+        uruchomiono["run"] = True
+    monkeypatch.setattr(server.mcp, "run", _run)
+```
+
+### [D2]/[D3] Task 6 — asercje anty-wyciek + ścieżka błędu
+W `test_cmd_login_zapisuje_i_drukuje` dodaj: `out = capsys.readouterr().out;
+assert "dabrowski" in out; assert "AT" not in out and "RT" not in out`.
+Nowy test:
+```python
+def test_cmd_login_blad_systemexit(monkeypatch):
+    def _boom(base_url, *, existing_client_id=None):
+        raise TimeoutError("brak callbacku")
+    monkeypatch.setattr(server.oauth_client, "login", _boom)
+    with pytest.raises(SystemExit):
+        server._cmd_login(Config.from_env())
+```
+
+### [W6]/[D6] Task 7 — importy na GÓRZE pliku + `pytest.raises`
+Nie dopisuj importów na końcu `test_zapytanie.py` (E402). Dodaj brakujące do
+istniejącego bloku importów na górze: `from bpp_mcp.client import BppClient` (jeśli
+brak), `from bpp_mcp.config import Config`, `from bpp_mcp.auth import
+set_current_bearer`. Testy w stylu `pytest.raises`:
+```python
+@respx.mock
+async def test_zapytanie_401_stdio_podpowiada_login():
+    cfg = Config(base_url="https://bpp.test", transport="stdio")
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+    async with BppClient(cfg, backoff_base=0.0) as c:
+        with pytest.raises(tools.BppError) as ei:
+            await tools.zapytanie_rekord(c, "rok = 2026")
+    assert ei.value.status_code == 401
+    assert "bpp-mcp login" in str(ei.value)
+
+
+@respx.mock
+async def test_zapytanie_401_http_bez_podpowiedzi_login():
+    cfg = Config(base_url="https://bpp.test", transport="http")
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+    set_current_bearer("DUMMY")  # w http _auth_kwargs wymaga bearera, by dojść do 401
+    try:
+        async with BppClient(cfg, backoff_base=0.0) as c:
+            with pytest.raises(tools.BppError) as ei:
+                await tools.zapytanie_rekord(c, "rok = 2026")
+        assert ei.value.status_code == 401
+        assert "bpp-mcp login" not in str(ei.value)
+    finally:
+        set_current_bearer(None)
+```
+(`tools` jest już importowane w `test_zapytanie.py`; `tools.BppError` istnieje —
+`tools.py` reeksportuje `BppError` z `client`.)
+
+### [D-mkdir] Task 1 — kosmetyka katalogu pośredniego (opcjonalne)
+Można dodać `os.chmod(path.parent.parent, 0o700)` w `save` (guard `OSError`),
+by `~/.config/bpp-mcp/` też był 0700. Sekret i tak chroni leaf-dir 0700 + plik
+0600 — niski priorytet.
