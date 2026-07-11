@@ -408,10 +408,11 @@ async def slownik(client: BppClient, rodzaj: str) -> dict[str, Any]:
 MAKS_LIMIT_ZAPYTANIE = 100
 
 
-def _blad_zapytania(exc: BppError) -> BppError:
+def _blad_zapytania(exc: BppError, *, stdio: bool = False) -> BppError:
     """Zmapuj kod stanu odpowiedzi endpointu ``zapytanie/*`` na czytelny,
     „naprawialny" komunikat dla agenta. Zwraca NOWY :class:`BppError` dla
     znanych statusów (400/401/403/503); dla nieznanych zwraca ``exc`` bez zmian.
+    W trybie stdio 401 podpowiada jednorazowe ``bpp-mcp login`` (hybryda).
     """
     status = exc.status_code
     if status == 400:
@@ -426,6 +427,12 @@ def _blad_zapytania(exc: BppError) -> BppError:
             payload=exc.payload,
         )
     if status == 401:
+        if stdio:
+            return BppError(
+                "Nie jesteś zalogowany lub token wygasł (401). Zaloguj się raz: "
+                "uruchom `bpp-mcp login` w terminalu, a potem ponów zapytanie.",
+                status_code=401,
+            )
         return BppError(
             "Nieprawidłowy lub wygasły token (401) — wymagane ponowne "
             "uwierzytelnienie OAuth (endpoint /o/ instancji BPP).",
@@ -465,7 +472,7 @@ async def _zapytanie(
         )
     except BppError as exc:
         if exc.status_code in (400, 401, 403, 503):
-            raise _blad_zapytania(exc) from exc
+            raise _blad_zapytania(exc, stdio=client.transport == "stdio") from exc
         raise
     return {
         "laczna_liczba": laczna,

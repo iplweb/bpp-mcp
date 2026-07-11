@@ -12,7 +12,9 @@ import pytest
 import respx
 
 from bpp_mcp import tools
-from bpp_mcp.client import BppError
+from bpp_mcp.auth import set_current_bearer
+from bpp_mcp.client import BppClient, BppError
+from bpp_mcp.config import Config
 from conftest import API_ROOT
 
 
@@ -238,3 +240,34 @@ async def test_get_paginated_retry_5xx_false_nie_ponawia(client):
             )
     assert exc.value.status_code == 503
     assert route.call_count == 1
+
+
+@respx.mock
+async def test_zapytanie_401_stdio_podpowiada_login():
+    cfg = Config(base_url="https://bpp.test", transport="stdio")
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+    async with BppClient(cfg, backoff_base=0.0) as c:
+        with pytest.raises(BppError) as ei:
+            await tools.zapytanie_rekord(c, "rok = 2026")
+    assert ei.value.status_code == 401
+    assert "bpp-mcp login" in str(ei.value)
+
+
+@respx.mock
+async def test_zapytanie_401_http_bez_podpowiedzi_login():
+    cfg = Config(base_url="https://bpp.test", transport="http")
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+    # w http _auth_kwargs wymaga bearera, by w ogóle dojść do 401 z serwera:
+    set_current_bearer("DUMMY")
+    try:
+        async with BppClient(cfg, backoff_base=0.0) as c:
+            with pytest.raises(BppError) as ei:
+                await tools.zapytanie_rekord(c, "rok = 2026")
+        assert ei.value.status_code == 401
+        assert "bpp-mcp login" not in str(ei.value)
+    finally:
+        set_current_bearer(None)

@@ -1,0 +1,255 @@
+"""OAuth 2.1 public client (native-app flow, RFC 8252) dla trybu stdio.
+
+Kroki rozbite na małe, osobno testowalne funkcje: ``discover`` (AS-metadata,
+RFC 8414), ``register_client`` (DCR, RFC 7591), ``_pkce`` (S256),
+``refresh`` (rotujący refresh) oraz ``login`` (orkiestracja loopback+browser).
+Sieć przez ``httpx`` (wstrzykiwalny ``client`` do testów).
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import queue
+import secrets
+import threading
+import time
+import urllib.parse
+import webbrowser
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import httpx
+
+from .token_store import TokenSet
+
+_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+
+
+class RefreshFailed(Exception):
+    """Odświeżenie tokenu nieudane (brak/nieważny refresh, sieć)."""
+
+
+@dataclass
+class Metadata:
+    authorization_endpoint: str
+    token_endpoint: str
+    registration_endpoint: str | None
+
+
+def _client_ctx(client: httpx.Client | None) -> tuple[httpx.Client, bool]:
+    if client is not None:
+        return client, False
+    return httpx.Client(timeout=_TIMEOUT, follow_redirects=True), True
+
+
+def discover(base_url: str, *, client: httpx.Client | None = None) -> Metadata:
+    url = f"{base_url.rstrip('/')}/.well-known/oauth-authorization-server"
+    cli, owns = _client_ctx(client)
+    try:
+        resp = cli.get(url)
+        resp.raise_for_status()
+        data = resp.json()
+    finally:
+        if owns:
+            cli.close()
+    return Metadata(
+        authorization_endpoint=data["authorization_endpoint"],
+        token_endpoint=data["token_endpoint"],
+        registration_endpoint=data.get("registration_endpoint"),
+    )
+
+
+def register_client(
+    meta: Metadata,
+    redirect_uri: str,
+    *,
+    client_name: str = "bpp-mcp",
+    client: httpx.Client | None = None,
+) -> str:
+    if not meta.registration_endpoint:
+        raise RuntimeError("Instancja BPP nie udostępnia rejestracji (DCR).")
+    cli, owns = _client_ctx(client)
+    try:
+        resp = cli.post(
+            meta.registration_endpoint,
+            json={"client_name": client_name, "redirect_uris": [redirect_uri]},
+        )
+        if resp.status_code >= 400:
+            tresc = " ".join(resp.text.split())[:300]
+            raise RuntimeError(
+                f"Rejestracja klienta odrzucona ({resp.status_code}): {tresc}"
+            )
+        return resp.json()["client_id"]
+    finally:
+        if owns:
+            cli.close()
+
+
+def _pkce() -> tuple[str, str]:
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def _exchange(
+    token_endpoint: str, data: dict, *, client: httpx.Client | None = None
+) -> dict:
+    cli, owns = _client_ctx(client)
+    try:
+        resp = cli.post(token_endpoint, data=data)
+        resp.raise_for_status()
+        return resp.json()
+    finally:
+        if owns:
+            cli.close()
+
+
+def _whoami(
+    base_url: str, access_token: str, *, client: httpx.Client | None = None
+) -> str | None:
+    cli, owns = _client_ctx(client)
+    try:
+        resp = cli.get(
+            f"{base_url.rstrip('/')}/api/v1/whoami/",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+        )
+        if resp.status_code != 200:
+            return None
+        return resp.json().get("username")
+    except httpx.HTTPError:
+        return None  # tożsamość jest miękka — nie wywraca loginu
+    finally:
+        if owns:
+            cli.close()
+
+
+def refresh(ts: TokenSet, *, client: httpx.Client | None = None) -> TokenSet:
+    if not ts.refresh_token:
+        raise RefreshFailed("Brak refresh_token — wymagane ponowne logowanie.")
+    if not ts.client_id:
+        raise RefreshFailed("Brak client_id — wymagane ponowne logowanie.")
+    try:
+        tok = _exchange(
+            ts.token_endpoint,
+            {
+                "grant_type": "refresh_token",
+                "refresh_token": ts.refresh_token,
+                "client_id": ts.client_id,
+            },
+            client=client,
+        )
+    except httpx.HTTPStatusError as exc:
+        raise RefreshFailed(
+            f"Odświeżenie odrzucone ({exc.response.status_code})."
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise RefreshFailed(f"Błąd sieci przy odświeżaniu: {exc}") from exc
+    return TokenSet(
+        base_url=ts.base_url,
+        access_token=tok["access_token"],
+        refresh_token=tok.get("refresh_token") or ts.refresh_token,
+        expires_at=time.time() + float(tok.get("expires_in", 0)),
+        token_endpoint=ts.token_endpoint,
+        username=ts.username,
+        client_id=ts.client_id,
+    )
+
+
+_STRONA_OK = (
+    "<!doctype html><meta charset='utf-8'>"
+    "<h1>Zalogowano do BPP</h1><p>Możesz wrócić do Claude i zamknąć tę kartę.</p>"
+)
+
+
+class _CallbackHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 (API http.server)
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != "/callback":
+            self.send_response(404)
+            self.end_headers()
+            return
+        params = urllib.parse.parse_qs(parsed.query)
+        self.server.wynik.put(params)  # type: ignore[attr-defined]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(_STRONA_OK.encode("utf-8"))
+
+    def log_message(self, *args: object) -> None:
+        pass  # cisza — nie zaśmiecaj stderr logami http.server
+
+
+def _start_loopback() -> tuple[HTTPServer, int]:
+    server = HTTPServer(("127.0.0.1", 0), _CallbackHandler)
+    server.wynik = queue.Queue()  # type: ignore[attr-defined]
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, port
+
+
+def login(
+    base_url: str,
+    *,
+    existing_client_id: str | None = None,
+    timeout: float = 300.0,
+    open_browser=webbrowser.open,
+) -> TokenSet:
+    base_url = base_url.rstrip("/")
+    meta = discover(base_url)
+    server, port = _start_loopback()
+    redirect_uri = f"http://127.0.0.1:{port}/callback"
+    try:
+        client_id = existing_client_id or register_client(meta, redirect_uri)
+        verifier, challenge = _pkce()
+        state = secrets.token_urlsafe(32)
+        query = urllib.parse.urlencode(
+            {
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": "read",
+                "state": state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            }
+        )
+        open_browser(f"{meta.authorization_endpoint}?{query}")
+        try:
+            params = server.wynik.get(timeout=timeout)  # type: ignore[attr-defined]
+        except queue.Empty as exc:
+            raise TimeoutError(
+                "Nie odebrano odpowiedzi logowania w wyznaczonym czasie."
+            ) from exc
+        if (params.get("state") or [None])[0] != state:
+            raise ValueError("Niezgodny parametr state — logowanie odrzucone.")
+        code = (params.get("code") or [None])[0]
+        if not code:
+            blad = (params.get("error") or ["brak parametru code"])[0]
+            raise ValueError(f"Logowanie nie powiodło się: {blad}.")
+    finally:
+        server.shutdown()
+        server.server_close()
+    tok = _exchange(
+        meta.token_endpoint,
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        },
+    )
+    return TokenSet(
+        base_url=base_url,
+        access_token=tok["access_token"],
+        refresh_token=tok.get("refresh_token"),
+        expires_at=time.time() + float(tok.get("expires_in", 0)),
+        token_endpoint=meta.token_endpoint,
+        username=_whoami(base_url, tok["access_token"]),
+        client_id=client_id,
+    )

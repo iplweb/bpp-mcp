@@ -90,6 +90,12 @@ class BppClient:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    @property
+    def transport(self) -> str:
+        """Tryb transportu (``stdio``/``http``) — steruje hybrydową
+        podpowiedzią logowania w narzędziach zapytań DjangoQL."""
+        return self._transport
+
     async def __aenter__(self) -> BppClient:
         return self
 
