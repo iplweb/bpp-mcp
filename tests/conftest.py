@@ -12,6 +12,14 @@ BASE_URL = "https://bpp.test"
 API_ROOT = f"{BASE_URL}/api/v1"
 
 
+@pytest.fixture(autouse=True)
+def _izolacja_config(tmp_path, monkeypatch):
+    """Izoluj token_store od realnego ~/.config w KAŻDYM teście — po wpięciu
+    OAuth stdio lifespan serwera tworzy TokenProvider → token_store.load(),
+    więc bez izolacji test czytałby prawdziwy token dewelopera."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+
 @pytest.fixture
 def config() -> Config:
     return Config(base_url=BASE_URL)
