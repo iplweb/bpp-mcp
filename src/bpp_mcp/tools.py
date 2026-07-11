@@ -52,8 +52,9 @@ _JAK_ZLOZYC = (
     "operator dobierz do typu pola (int/date: = != > >= < <= in; tekst bez "
     "słownika: ~ zawiera / = dokładnie; bool: = True/False; nullable: != None), "
     "relacje trawersuj kropką, wartości słownikowe wpisuj dosłownie. Złóż JEDNO "
-    "zapytanie DjangoQL do wklejenia w edytor „zapytanie” BPP (model rekord; "
-    "wykonanie wymaga zalogowania — anon-API go nie uruchamia)."
+    "zapytanie DjangoQL; wykonasz je narzędziem zapytanie_rekord (model rekord) "
+    "po zalogowaniu (Bearer/sesja + uprawnienia redaktora) — anon-API go nie "
+    "uruchamia."
 )
 
 
@@ -402,6 +403,119 @@ async def slownik(client: BppClient, rodzaj: str) -> dict[str, Any]:
     return {"rodzaj": rodzaj, "count": len(pozycje), "pozycje": pozycje}
 
 
+#: Sufit ``limit`` dla zapytań DjangoQL. Endpoint API twardo capuje pojedyncze
+#: żądanie do 100; paginacja i tak stronicuje porcjami ≤ ``PAGE_LIMIT``.
+MAKS_LIMIT_ZAPYTANIE = 100
+
+
+def _blad_zapytania(exc: BppError) -> BppError:
+    """Zmapuj kod stanu odpowiedzi endpointu ``zapytanie/*`` na czytelny,
+    „naprawialny" komunikat dla agenta. Zwraca NOWY :class:`BppError` dla
+    znanych statusów (400/401/403/503); dla nieznanych zwraca ``exc`` bez zmian.
+    """
+    status = exc.status_code
+    if status == 400:
+        info = exc.payload if isinstance(exc.payload, dict) else {}
+        opis = info.get("error") or "niepoprawne zapytanie DjangoQL"
+        line, column = info.get("line"), info.get("column")
+        gdzie = f" (linia {line}, kolumna {column})" if line and column else ""
+        return BppError(
+            f"Zapytanie DjangoQL odrzucone{gdzie}: {opis}. Popraw zapytanie "
+            "(nazwa pola/składnia; pola PII jak autor.email są zablokowane) i ponów.",
+            status_code=400,
+            payload=exc.payload,
+        )
+    if status == 401:
+        return BppError(
+            "Nieprawidłowy lub wygasły token (401) — wymagane ponowne "
+            "uwierzytelnienie OAuth (endpoint /o/ instancji BPP).",
+            status_code=401,
+        )
+    if status == 403:
+        return BppError(
+            "Brak uprawnień do zapytań DjangoQL (403) — wymagany superuser albo "
+            "staff w grupie „wprowadzanie danych”.",
+            status_code=403,
+        )
+    if status == 503:
+        return BppError(
+            "Zapytanie trwało za długo (503, statement_timeout 8 s) — zawęź "
+            "warunki (mniejszy zakres lat, bardziej selektywne pola).",
+            status_code=503,
+        )
+    return exc
+
+
+async def _zapytanie(
+    client: BppClient, endpoint: str, q: str, limit: int, offset: int
+) -> dict[str, Any]:
+    """Wspólny trzon trzech narzędzi DjangoQL. Puste ``q`` → pusty wynik bez
+    żądania (endpoint i tak zwróciłby ``[]``). Kody 400/401/403/503 mapowane na
+    czytelne błędy. 5xx bez ponawiania (503 = deterministyczny timeout)."""
+    q = (q or "").strip()
+    if not q:
+        return {"laczna_liczba": 0, "zwrocono": 0, "niepelne": False, "wyniki": []}
+    limit = _clamp_limit(limit, MAKS_LIMIT_ZAPYTANIE)
+    params: dict[str, Any] = {"q": q}
+    if offset:
+        params["offset"] = offset
+    try:
+        wyniki, laczna, niepelne = await client.get_paginated(
+            endpoint, params, limit, retry_5xx=False
+        )
+    except BppError as exc:
+        if exc.status_code in (400, 401, 403, 503):
+            raise _blad_zapytania(exc) from exc
+        raise
+    return {
+        "laczna_liczba": laczna,
+        "zwrocono": len(wyniki),
+        "niepelne": niepelne,
+        "wyniki": wyniki,
+    }
+
+
+async def zapytanie_rekord(
+    client: BppClient, q: str, limit: int = 25, offset: int = 0
+) -> dict[str, Any]:
+    """Precyzyjne zapytanie DjangoQL po publikacjach (``bpp.Rekord``) —
+    autoryzowany endpoint ``/api/v1/zapytanie/rekord/``.
+
+    Wymaga Bearer/sesji + uprawnień (superuser lub staff „wprowadzanie danych").
+    Pola/typy/operatory/słowniki: użyj narzędzia ``djangoql_schema("rekord")``.
+    Zwraca płaskie pozycje (jak ``/szukaj/``) w kopercie z ``laczna_liczba``.
+    """
+    return await _zapytanie(client, "zapytanie/rekord/", q, limit, offset)
+
+
+async def zapytanie_autor(
+    client: BppClient, q: str, limit: int = 25, offset: int = 0
+) -> dict[str, Any]:
+    """Precyzyjne zapytanie DjangoQL po autorach (``bpp.Autor``) — autoryzowany
+    endpoint ``/api/v1/zapytanie/autor/``.
+
+    Pola do filtrowania m.in.: ``nazwisko``, ``imiona``, ``orcid``,
+    ``poprzednie_nazwiska``, ``system_kadrowy_id``, ``tytul.skrot``,
+    ``aktualna_jednostka.nazwa``, ``pbn_uid.pbnId`` (trawersacja do PBN).
+    Pola PII (``email``/``adnotacje``/``opis``) są zablokowane → 400.
+    """
+    return await _zapytanie(client, "zapytanie/autor/", q, limit, offset)
+
+
+async def zapytanie_autorzy(
+    client: BppClient, q: str, limit: int = 25, offset: int = 0
+) -> dict[str, Any]:
+    """Precyzyjne zapytanie DjangoQL po wpisach autorstwa (``bpp.Autorzy``) —
+    autoryzowany endpoint ``/api/v1/zapytanie/autorzy/``.
+
+    Pola m.in.: ``zapisany_jako``, ``kolejnosc``, ``afiliuje``, ``zatrudniony``,
+    ``typ_odpowiedzialnosci.skrot``, ``jednostka.nazwa``,
+    ``dyscyplina_naukowa.nazwa`` oraz trawersacje ``rekord.…`` (``rekord.rok``,
+    ``rekord.charakter_formalny.nazwa``) i ``autor.…`` (``autor.nazwisko``).
+    """
+    return await _zapytanie(client, "zapytanie/autorzy/", q, limit, offset)
+
+
 async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego modelu (na razie
     tylko ``rekord`` = ``bpp.Rekord``).
@@ -419,13 +533,11 @@ async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     ``rok >= 2020 and jezyk.nazwa = "angielski" and impact_factor > 0``)
     zamiast zgadywać nazwy pól i dozwolone wartości.
 
-    UWAGA — samo WYKONANIE zapytania nie jest tu dostępne. Wyszukiwanie
-    DjangoQL („zapytanie") w BPP jest dziś funkcją WYŁĄCZNIE dla użytkownika
-    ZALOGOWANEGO i nie ma go w publicznym, anonimowym API. To narzędzie służy
-    tylko do KONSTRUKCJI zapytań; gdy anon-API zyska wykonywanie, dołożymy
-    osobne narzędzie ``zapytanie(query)`` (patrz TODO w server.py). Wersja
-    schematu jest w pierwszej linii nagłówka (``# BPP <wersja>``) — musi
-    pasować do wersji odpytywanej instancji BPP.
+    To narzędzie służy do KONSTRUKCJI zapytań. Aby zapytanie WYKONAĆ, użyj
+    ``zapytanie_rekord`` / ``zapytanie_autor`` / ``zapytanie_autorzy`` —
+    autoryzowane endpointy ``/api/v1/zapytanie/*`` (Bearer/sesja + uprawnienia
+    redaktora; anonimowo 401/403). Wersja schematu jest w pierwszej linii
+    nagłówka (``# BPP <wersja>``) — musi pasować do wersji odpytywanej instancji.
     """
     if model not in _SCHEMATY_DJANGOQL:
         dostepne = ", ".join(_SCHEMATY_DJANGOQL)
