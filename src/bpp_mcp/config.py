@@ -19,22 +19,43 @@ class Config:
 
     base_url: str = DEFAULT_BASE_URL
     basic_auth: str | None = None
+    transport: str = "stdio"
+    http_host: str = "127.0.0.1"
+    http_port: int = 8000
+    resource_url: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
         """Zbuduj konfigurację ze zmiennych środowiskowych.
 
         - ``BPP_BASE_URL`` — bazowy URL instancji (domyślnie umlub),
-        - ``BPP_BASIC_AUTH`` — opcjonalny ``user:pass`` (raporty slotów).
+        - ``BPP_BASIC_AUTH`` — opcjonalny ``user:pass`` (raporty slotów),
+        - ``BPP_MCP_TRANSPORT`` — ``stdio`` (dom.) | ``http`` (OAuth),
+        - ``BPP_MCP_HTTP_HOST`` / ``BPP_MCP_HTTP_PORT`` — bind serwera HTTP,
+        - ``BPP_MCP_RESOURCE_URL`` — nadpisanie pola ``resource`` w PRM.
         """
         base = os.environ.get("BPP_BASE_URL", DEFAULT_BASE_URL)
         auth = os.environ.get("BPP_BASIC_AUTH") or None
-        return cls(base_url=base, basic_auth=auth)
+        transport = os.environ.get("BPP_MCP_TRANSPORT", "stdio").lower()
+        return cls(
+            base_url=base,
+            basic_auth=auth,
+            transport="http" if transport == "http" else "stdio",
+            http_host=os.environ.get("BPP_MCP_HTTP_HOST", "127.0.0.1"),
+            http_port=int(os.environ.get("BPP_MCP_HTTP_PORT", "8000")),
+            resource_url=os.environ.get("BPP_MCP_RESOURCE_URL") or None,
+        )
 
     @property
     def api_root(self) -> str:
         """Korzeń API v1, bez końcowego ukośnika."""
         return f"{self.base_url.rstrip('/')}/api/v1"
+
+    @property
+    def effective_resource_url(self) -> str:
+        """URL zasobu (pole ``resource`` w protected-resource-metadata).
+        Domyślnie kanoniczny URI serwera streamable: host:port + ``/mcp``."""
+        return self.resource_url or f"http://{self.http_host}:{self.http_port}/mcp"
 
     @property
     def auth_tuple(self) -> tuple[str, str] | None:
