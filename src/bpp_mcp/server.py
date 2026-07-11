@@ -146,6 +146,74 @@ async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     return await tools.djangoql_schema(model)
 
 
+# Instrukcja-szablon dla promptu ``zloz_zapytanie_djangoql``. Trzymana jako
+# jedna stała modułowa (łatwa do testu jednostkowego, bez odpalania serwera).
+# Placeholder ``{opis}`` jest jedynym miejscem interpolacji — dlatego w tekście
+# NIE wolno używać nawiasów klamrowych (DjangoQL ich nie potrzebuje, operatory
+# to ``= != > ~`` itd.), inaczej ``str.format`` by się wywalił.
+PROMPT_ZLOZ_ZAPYTANIE = """\
+Jesteś asystentem, który UKŁADA (nie wykonuje) zapytanie w języku DjangoQL dla
+systemu BPP. Prośba użytkownika (po polsku):
+
+    {opis}
+
+KROK 1 — POBIERZ SCHEMAT. Najpierw wywołaj narzędzie MCP
+`djangoql_schema("rekord")`. Jego wynik jest JEDYNYM źródłem prawdy o polach,
+typach, relacjach i dozwolonych wartościach słownikowych. Nie zgaduj nazw pól
+ani wartości — bierz je dosłownie ze schematu (sekcja `dictionaries`).
+
+KROK 2 — REGUŁY KOMPOZYCJI:
+- Operator dobierz do TYPU pola:
+  - int / date (rok, impact_factor, punktacja, daty): `=` `!=` `>` `>=` `<`
+    `<=` oraz `in (…)` dla listy wartości.
+  - str tekstowy BEZ słownika (tytuł, uwagi): `~` = "zawiera" (podłańcuch),
+    `=` = dokładne dopasowanie całości. Do szukania po fragmencie używaj `~`.
+  - bool: `= True` / `= False` (bez cudzysłowów).
+  - pole nullable / relacja opcjonalna: test istnienia przez `!= None`
+    (albo `= None` dla braku).
+- Relacje trawersuj KROPKĄ, schodząc do pola dopasowania podanego w schemacie,
+  np. `autorzy.autor.nazwisko ~ "Kowalski"`, `charakter_formalny.nazwa = "…"`,
+  `jezyk.nazwa = "angielski"`.
+- Wartości słownikowe (charakter_formalny, jezyk, dyscyplina_naukowa, licencje
+  OA itd.) wpisuj DOKŁADNIE tak, jak w appendiksie `dictionaries` — co do znaku,
+  wielkości liter i polskich znaków. Nie tłumacz i nie skracaj.
+- Pola tekstowe bez słownika dopasowuj przez `~` (zawiera).
+- Negacja WYŁĄCZNIE operatorem: `!=`, `!~`, `not in (…)`. Nie używaj
+  samodzielnego `not …`.
+- Łącz warunki przez `and` / `or`; grupuj nawiasami `(` `)` gdy mieszasz
+  `and` z `or`, żeby priorytet był jednoznaczny.
+- Łańcuchy w cudzysłowach prostych `"…"`; liczby, `True`, `False`, `None` bez
+  cudzysłowów.
+
+KROK 3 — ZWALIDUJ zanim oddasz:
+- każdy łańcuch w cudzysłowach, liczby/bool/None bez cudzysłowów;
+- operator pasuje do typu pola (np. `~` tylko na tekście, `>` tylko na
+  liczbie/dacie);
+- wartości słownikowe zgadzają się CO DO ZNAKU z sekcją `dictionaries`;
+- nawiasy się domykają, priorytet `and`/`or` jest jednoznaczny;
+- istnienie/brak relacji wyrażone przez `!= None` / `= None`.
+
+KROK 4 — ODDAJ WYNIK: JEDNO gotowe zapytanie DjangoQL w bloku kodu, a pod nim
+jedno zdanie: wklej to w edytor „zapytanie" w BPP (model: rekord; wykonanie
+wymaga zalogowania — publiczne, anonimowe API tego nie uruchamia).
+"""
+
+
+@mcp.prompt(
+    name="zloz_zapytanie_djangoql",
+    description=(
+        "Ułóż (nie wykonuj) zapytanie DjangoQL dla modelu bpp.Rekord na "
+        "podstawie opisu po polsku — do wklejenia w edytor „zapytanie” BPP."
+    ),
+)
+def zloz_zapytanie_djangoql(opis: str) -> str:
+    """Zwróć instrukcję-wiadomość dla klienta LLM: jak — korzystając z
+    narzędzia ``djangoql_schema("rekord")`` — złożyć poprawne zapytanie
+    DjangoQL realizujące ``opis`` użytkownika. Prompt tylko KONSTRUUJE
+    zapytanie (wykonanie w BPP wymaga zalogowania; nie ma go w anon-API)."""
+    return PROMPT_ZLOZ_ZAPYTANIE.format(opis=opis.strip())
+
+
 # TODO(anon-API): gdy publiczne API BPP zyska wykonywanie zapytań DjangoQL dla
 # użytkownika anonimowego, dołożyć tu narzędzie ``zapytanie(query: str)``
 # delegujące do np. ``tools.zapytanie`` (POST/GET do endpointu wyszukiwania).

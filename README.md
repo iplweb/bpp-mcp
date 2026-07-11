@@ -84,6 +84,12 @@ claude mcp add bpp \
 | `slownik(rodzaj)` | mały słownik referencyjny (tłumaczenie ID↔nazwa) |
 | `djangoql_schema(model="rekord")` | schemat DjangoQL-dla-LLM modelu Rekord (do budowy zapytań) |
 
+Dodatkowo serwer wystawia **prompt** MCP (nie narzędzie wykonujące):
+
+| Prompt | Rola |
+|---|---|
+| `zloz_zapytanie_djangoql(opis)` | złóż zapytanie DjangoQL do wklejenia (z opisu po polsku) |
+
 `typ` w `pobierz_rekord` / `lista_publikacji`: `wydawnictwo_ciagle`,
 `wydawnictwo_zwarte`, `patent`, `praca_doktorska`, `praca_habilitacyjna`.
 
@@ -143,6 +149,19 @@ rok >= 2020 and jezyk.nazwa = "angielski" and impact_factor > 0
   [iplweb/bpp-schema-for-llm](https://github.com/iplweb/bpp-schema-for-llm)
   (schemat przeskanowany — bez danych osobowych). Plik jest zbundlowany jako
   zasób pakietu (`bpp_mcp/data/`) i wczytywany przez `importlib.resources`.
+
+### Prompt `zloz_zapytanie_djangoql(opis)` — złóż zapytanie do wklejenia
+
+Serwer wystawia prompt MCP `zloz_zapytanie_djangoql(opis)`. To **nie** jest
+narzędzie wykonujące — prompt zwraca instrukcję dla klienta LLM, jak z opisu po
+polsku ułożyć jedno poprawne zapytanie DjangoQL. Instrukcja każe najpierw
+wywołać `djangoql_schema("rekord")` (jedyne źródło pól, typów, relacji i wartości
+`dictionaries`), podaje zwięzłe reguły (operator wg typu, trawersacja relacji
+kropką, wartości słownikowe dosłownie, negacja tylko `!=`/`!~`/`not in`,
+łączenie `and`/`or` + nawiasy), a na końcu każe zwrócić gotowe zapytanie w bloku
+kodu do wklejenia w edytor „zapytanie" BPP. **Wykonanie** takiego zapytania w
+BPP wymaga zalogowania (publiczne, anonimowe API go nie uruchamia) — prompt, tak
+jak `djangoql_schema`, tylko *konstruuje*, nie *wykonuje*.
 
 ## Rozwój
 

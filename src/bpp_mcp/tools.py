@@ -45,6 +45,18 @@ _SCHEMATY_DJANGOQL: dict[str, str] = {
 }
 
 
+# Krótka wskazówka doklejana do zwrotu ``djangoql_schema`` — przypomina LLM-owi,
+# że schemat służy do ZŁOŻENIA zapytania (do wklejenia), a nie do wykonania.
+_JAK_ZLOZYC = (
+    "Użyj tych pól i sekcji `dictionaries` jako jedynego źródła prawdy: "
+    "operator dobierz do typu pola (int/date: = != > >= < <= in; tekst bez "
+    "słownika: ~ zawiera / = dokładnie; bool: = True/False; nullable: != None), "
+    "relacje trawersuj kropką, wartości słownikowe wpisuj dosłownie. Złóż JEDNO "
+    "zapytanie DjangoQL do wklejenia w edytor „zapytanie” BPP (model rekord; "
+    "wykonanie wymaga zalogowania — anon-API go nie uruchamia)."
+)
+
+
 def _wczytaj_schemat_djangoql(model: str) -> str:
     """Wczytaj zbundlowany plik schematu przez ``importlib.resources`` (nie
     ścieżki względne — działa też z zainstalowanego wheela / zip-a)."""
@@ -419,4 +431,4 @@ async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
         dostepne = ", ".join(_SCHEMATY_DJANGOQL)
         raise BppError(f"Nieznany model schematu '{model}'. Dostępne: {dostepne}.")
     tekst = _wczytaj_schemat_djangoql(model)
-    return {"model": model, "schemat": tekst}
+    return {"model": model, "schemat": tekst, "jak_zlozyc": _JAK_ZLOZYC}

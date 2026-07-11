@@ -7,6 +7,7 @@ import pytest
 
 from bpp_mcp import tools
 from bpp_mcp.client import BppError
+from bpp_mcp.server import PROMPT_ZLOZ_ZAPYTANIE, zloz_zapytanie_djangoql
 
 
 async def test_djangoql_schema_zwraca_naglowek_i_slowniki():
@@ -20,6 +21,33 @@ async def test_djangoql_schema_zwraca_naglowek_i_slowniki():
     assert "dictionaries" in schemat
     # Reguły języka DjangoQL (gramatyka) też są w nagłówku.
     assert "DjangoQL schema" in schemat
+
+
+async def test_djangoql_schema_zawiera_wskazowke_jak_zlozyc():
+    wynik = await tools.djangoql_schema()
+    assert isinstance(wynik["jak_zlozyc"], str)
+    assert "operator" in wynik["jak_zlozyc"]
+    assert "dictionaries" in wynik["jak_zlozyc"]
+    assert "wklej" in wynik["jak_zlozyc"]
+
+
+def test_prompt_zloz_zapytanie_wplata_opis_i_reguly():
+    opis = "publikacje po angielsku z 2023 z impact factorem"
+    wiadomosc = zloz_zapytanie_djangoql(opis)
+    assert isinstance(wiadomosc, str)
+    assert wiadomosc.strip()
+    # Opis użytkownika jest wpleciony w instrukcję.
+    assert opis in wiadomosc
+    # Kluczowe reguły kompozycji obecne.
+    assert "djangoql_schema" in wiadomosc
+    assert "operator" in wiadomosc
+    assert "dictionaries" in wiadomosc
+    assert "wklej" in wiadomosc
+
+
+def test_prompt_stala_ma_placeholder_opis():
+    # Treść trzymana jako jedna stała modułowa z jednym miejscem interpolacji.
+    assert "{opis}" in PROMPT_ZLOZ_ZAPYTANIE
 
 
 async def test_djangoql_schema_domyslny_model_to_rekord():
