@@ -27,17 +27,20 @@ def test_auth_kwargs_http():
     assert kw["host"] == "127.0.0.1" and kw["port"] == 8055
 
 
-def test_client_ustawia_bearer_z_biezacego_requestu():
+@pytest.mark.asyncio
+async def test_client_ustawia_bearer_z_biezacego_requestu():
     # K1-guard: _client bierze token z ctx.request_context.request (nie
     # z get_access_token, który jest stale).
+    from bpp_mcp.server import KontekstApp
+
     auth.set_current_bearer(None)
     req = types.SimpleNamespace(headers={"authorization": "Bearer TOKEN_XYZ"})
     rc = types.SimpleNamespace(
         request=req,
-        lifespan_context=types.SimpleNamespace(client="SENTINEL"),
+        lifespan_context=KontekstApp(client="SENTINEL", bearer_provider=None),
     )
     ctx = types.SimpleNamespace(request_context=rc)
-    assert _client(ctx) == "SENTINEL"
+    assert await _client(ctx) == "SENTINEL"
     assert auth.current_bearer() == "TOKEN_XYZ"
     auth.set_current_bearer(None)
 

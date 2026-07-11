@@ -17,21 +17,31 @@ from . import tools
 from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
 from .client import BppClient
 from .config import Config
+from .login_state import TokenProvider
 
 
 @dataclass
 class KontekstApp:
-    """Zawartość lifespan-context serwera — współdzielony klient HTTP."""
+    """Zawartość lifespan-context serwera — współdzielony klient HTTP oraz
+    (w trybie stdio) provider tokenu OAuth z lokalnego cache."""
 
     client: BppClient
+    bearer_provider: TokenProvider | None = None
 
 
-def _client(ctx: Context) -> BppClient:
-    """Zwróć współdzielony klient ORAZ ustaw w kontekście token bieżącego
-    requestu (z ctx.request_context.request — NIE get_access_token, K1)."""
+async def _client(ctx: Context) -> BppClient:
+    """Zwróć współdzielony klient i ustaw token bieżącego żądania.
+
+    Kolejność: token z nagłówka bieżącego requestu (tryb http, K1) wygrywa;
+    w stdio, gdy go brak, sięgamy do lokalnego cache przez ``bearer_provider``
+    (może odświeżyć token). Brak obu → anonimowo (``None``)."""
     request = getattr(ctx.request_context, "request", None)
-    set_current_bearer(bearer_from_request(request))
-    return ctx.request_context.lifespan_context.client
+    bearer = bearer_from_request(request)
+    kctx = ctx.request_context.lifespan_context
+    if bearer is None and kctx.bearer_provider is not None:
+        bearer = await kctx.bearer_provider.bearer()
+    set_current_bearer(bearer)
+    return kctx.client
 
 
 async def szukaj_publikacji(
@@ -43,12 +53,12 @@ async def szukaj_publikacji(
 ) -> dict[str, Any]:
     """Rankowane wyszukiwanie pełnotekstowe publikacji w BPP (endpoint
     /szukaj/). Wymaga instancji BPP z Fazą 0 — inaczej zwraca czytelny błąd."""
-    return await tools.szukaj_publikacji(_client(ctx), q, rok_od, rok_do, limit)
+    return await tools.szukaj_publikacji(await _client(ctx), q, rok_od, rok_do, limit)
 
 
 async def szukaj_autora(ctx: Context, nazwisko: str) -> dict[str, Any]:
     """Znajdź autorów po (bieżącym) nazwisku — zwraca ID/slug/jednostkę."""
-    return await tools.szukaj_autora(_client(ctx), nazwisko)
+    return await tools.szukaj_autora(await _client(ctx), nazwisko)
 
 
 async def publikacje_autora(
@@ -60,7 +70,7 @@ async def publikacje_autora(
 ) -> dict[str, Any]:
     """Publiczne publikacje autora (po ID lub slug). Sufit 100 → flaga obcieto."""
     return await tools.publikacje_autora(
-        _client(ctx), id_lub_slug, rok_od, rok_do, limit
+        await _client(ctx), id_lub_slug, rok_od, rok_do, limit
     )
 
 
@@ -73,7 +83,7 @@ async def publikacje_jednostki(
 ) -> dict[str, Any]:
     """Publiczne publikacje jednostki i jej pod-jednostek (po ID lub slug)."""
     return await tools.publikacje_jednostki(
-        _client(ctx), id_lub_slug, rok_od, rok_do, limit
+        await _client(ctx), id_lub_slug, rok_od, rok_do, limit
     )
 
 
@@ -86,7 +96,7 @@ async def pobierz_rekord(
     """Pobierz rekord (typ: wydawnictwo_ciagle/wydawnictwo_zwarte/patent/
     praca_doktorska/praca_habilitacyjna) z rozwiniętymi hyperlinkami —
     autorami, źródłem, streszczeniami — jako jeden zagnieżdżony obiekt."""
-    return await tools.pobierz_rekord(_client(ctx), typ, id, pelne_dane_autorow)
+    return await tools.pobierz_rekord(await _client(ctx), typ, id, pelne_dane_autorow)
 
 
 async def lista_publikacji(
@@ -102,7 +112,7 @@ async def lista_publikacji(
     """Harvest/przyrost listy publikacji danego typu z filtrami (rok, charakter
     formalny, ostatnio zmienione). Auto-follow paginacji do limitu."""
     return await tools.lista_publikacji(
-        _client(ctx),
+        await _client(ctx),
         typ,
         rok_od,
         rok_do,
@@ -116,7 +126,7 @@ async def lista_publikacji(
 async def slownik(ctx: Context, rodzaj: str) -> dict[str, Any]:
     """Pobierz mały słownik referencyjny (charakter_formalny/jezyk/
     dyscyplina_naukowa/…) jednym żądaniem. Odrzuca dane wolumenowe."""
-    return await tools.slownik(_client(ctx), rodzaj)
+    return await tools.slownik(await _client(ctx), rodzaj)
 
 
 async def zapytanie_rekord(
@@ -129,7 +139,7 @@ async def zapytanie_rekord(
     uprawnienia: superuser lub staff „wprowadzanie danych"). Błędy: 400 zła
     składnia/pole (z pozycją) → popraw q; 401 token; 403 brak uprawnień;
     503 timeout → zawęź."""
-    return await tools.zapytanie_rekord(_client(ctx), q, limit, offset)
+    return await tools.zapytanie_rekord(await _client(ctx), q, limit, offset)
 
 
 async def zapytanie_autor(
@@ -140,7 +150,7 @@ async def zapytanie_autor(
     imiona, orcid, poprzednie_nazwiska, tytul.skrot, aktualna_jednostka.nazwa,
     pbn_uid.pbnId. Pola PII (email/adnotacje/opis) są zablokowane → 400.
     Auth i błędy jak w zapytanie_rekord."""
-    return await tools.zapytanie_autor(_client(ctx), q, limit, offset)
+    return await tools.zapytanie_autor(await _client(ctx), q, limit, offset)
 
 
 async def zapytanie_autorzy(
@@ -152,7 +162,7 @@ async def zapytanie_autorzy(
     typ_odpowiedzialnosci.skrot, jednostka.nazwa, dyscyplina_naukowa.nazwa oraz
     trawersacje rekord.… (rekord.rok) i autor.… (autor.nazwisko). Auth i błędy
     jak w zapytanie_rekord."""
-    return await tools.zapytanie_autorzy(_client(ctx), q, limit, offset)
+    return await tools.zapytanie_autorzy(await _client(ctx), q, limit, offset)
 
 
 async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
@@ -285,8 +295,11 @@ def build_mcp(config: Config) -> FastMCP:
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[KontekstApp]:
         client = BppClient(config)
+        provider = (
+            TokenProvider(config.base_url) if config.transport != "http" else None
+        )
         try:
-            yield KontekstApp(client=client)
+            yield KontekstApp(client=client, bearer_provider=provider)
         finally:
             await client.aclose()
 
