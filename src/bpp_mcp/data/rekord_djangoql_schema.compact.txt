@@ -22,7 +22,6 @@
 start model: bpp.rekord
 
 bpp.rekord:
-  adnotacje                                    str
   autorzy                                      -> bpp.autorzy?
   charakter_formalny                           -> bpp.charakter_formalny  match nazwa
   doi                                          str?
@@ -254,7 +253,6 @@ bpp.wydawca:
   wydawnictwo_zwarte   -> bpp.wydawnictwo_zwarte?
 
 bpp.wydawnictwo_zwarte:
-  adnotacje                                    str
   autorzy                                      -> bpp.autor
   autorzy_set                                  -> bpp.wydawnictwo_zwarte_autor?
   cached_punkty_dyscyplin                      unknown?
@@ -386,20 +384,17 @@ bpp.zrodlo:
   zasieg                     -> bpp.zasieg_zrodla?  match nazwa
 
 bpp.autor:
-  adnotacje                    str
   aktualna_funkcja             -> bpp.funkcja_autora?  match nazwa
   aktualna_jednostka           -> bpp.jednostka?
   autor_dyscyplina             -> bpp.autor_dyscyplina?
   autor_jednostka              -> bpp.autor_jednostka?
   autorzy                      -> bpp.autorzy?
   cache_punktacja_autora       -> bpp.cache_punktacja_autora?
-  email                        str  "E-mail"
   expertus_id                  str?  "Identyfikator w bazie Expertus"
   id                           int
   imiona                       str
   jednostki                    -> bpp.jednostka
   nazwisko                     str
-  opis                         str?
   orcid                        str?  "Identyfikator ORCID" — Open Researcher and Contributor ID, vide http://www.orcid.org
   orcid_w_pbn                  bool?  "ORCID jest w bazie PBN?" — Jeżeli ORCID jest w bazie PBN, to pole powinno być zaznaczone. Zaznaczenie następuje
         automatycznie, przez procedury integrujące bazę danych z PBNem w nocy. Można też zaznaczyć ręcznie.
@@ -456,7 +451,6 @@ bpp.jednostka:
   autorzy                      -> bpp.autorzy?
   cache_punktacja_autora       -> bpp.cache_punktacja_autora?
   children                     -> bpp.jednostka?
-  email                        str  "E-mail"
   id                           int
   jest_lustrem                 bool  "Syntetyczny węzeł-lustro wydziału"
   kierunek_studiow             -> bpp.kierunek_studiow?
@@ -532,7 +526,6 @@ bpp.charakter_pbn:
   wlasciwy_dla        str  "Właściwy dla..."  choices: Artykuł | Książka | Rozdział
 
 bpp.wydawnictwo_ciagle:
-  adnotacje                                    str
   autorzy                                      -> bpp.autor
   autorzy_set                                  -> bpp.wydawnictwo_ciagle_autor?
   cached_punkty_dyscyplin                      unknown?
@@ -625,7 +618,6 @@ pbn_api.language:
   last_updated_on  datetime
 
 bpp.praca_doktorska:
-  adnotacje                                    str
   autor                                        -> bpp.autor
   doi                                          str?
   dostep_dnia                                  date?  "Dostęp dnia (płatny dostęp)" — Data dostępu do strony WWW.
@@ -690,7 +682,6 @@ bpp.praca_doktorska:
   wydawca_opis                                 str  "Wydawca - szczegóły"
 
 bpp.praca_habilitacyjna:
-  adnotacje                                    str
   autor                                        -> bpp.autor
   doi                                          str?
   dostep_dnia                                  date?  "Dostęp dnia (płatny dostęp)" — Data dostępu do strony WWW.
@@ -790,7 +781,6 @@ pbn_api.conference:
   versions           unknown
 
 bpp.patent:
-  adnotacje                                    str
   autorzy                                      -> bpp.autor
   autorzy_set                                  -> bpp.patent_autor?
   cached_punkty_dyscyplin                      unknown?

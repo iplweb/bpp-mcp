@@ -168,10 +168,12 @@ async def zapytanie_autorzy(
 
 
 async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
-    """Zwróć zbundlowany schemat DjangoQL-dla-LLM modelu bpp.Rekord: reguły
-    języka DjangoQL + pola/typy/operatory/relacje + dozwolone WARTOŚCI wyłącznie
-    bezpiecznych słowników (ZERO danych osób/instytucji). Służy do KONSTRUKCJI
-    precyzyjnych zapytań — wersja schematu jest w nagłówku (``# BPP <wersja>``).
+    """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego korzenia (``model``:
+    ``rekord`` = bpp.Rekord, ``autor`` = bpp.Autor, ``autorzy`` = bpp.Autorzy —
+    po jednym na endpoint /api/v1/zapytanie/*): reguły języka DjangoQL +
+    pola/typy/operatory/relacje + dozwolone WARTOŚCI wyłącznie bezpiecznych
+    słowników (ZERO danych osób/instytucji). Służy do KONSTRUKCJI precyzyjnych
+    zapytań — wersja schematu jest w nagłówku (``# BPP <wersja>``).
 
     To narzędzie tylko BUDUJE zapytanie. Aby je WYKONAĆ, użyj narzędzi
     zapytanie_rekord / zapytanie_autor / zapytanie_autorzy — wymagają
