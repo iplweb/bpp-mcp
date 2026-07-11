@@ -25,8 +25,12 @@ wdrożenia BPP przez zmienne środowiskowe:
 
 | Zmienna | Domyślnie | Opis |
 |---|---|---|
-| `BPP_BASE_URL` | `https://bpp.umlub.pl` | bazowy URL instancji BPP |
-| `BPP_BASIC_AUTH` | *(brak)* | opcjonalny `user:pass` (tylko raporty slotów) |
+| `BPP_BASE_URL` | `https://bpp.umlub.pl` | bazowy URL instancji BPP (API i issuer OAuth) |
+| `BPP_BASIC_AUTH` | *(brak)* | opcjonalny `user:pass` (tylko raporty slotów, stdio) |
+| `BPP_MCP_TRANSPORT` | `stdio` | `stdio` (anon) lub `http` (OAuth per-user) |
+| `BPP_MCP_HTTP_HOST` | `127.0.0.1` | bind serwera HTTP (tryb `http`) |
+| `BPP_MCP_HTTP_PORT` | `8000` | port serwera HTTP (tryb `http`) |
+| `BPP_MCP_RESOURCE_URL` | `http://<host>:<port>/mcp` | pole `resource` w protected-resource-metadata |
 
 ## Instalacja i uruchomienie
 
@@ -45,6 +49,28 @@ bpp-mcp
 
 Serwer komunikuje się po stdio (standard MCP) — normalnie uruchamia go klient
 MCP, nie użytkownik ręcznie.
+
+### Tryb OAuth (HTTP, per-user)
+
+Domyślnie `bpp-mcp` działa po **stdio** i anonimowo (dane publiczne). Aby działać
+**z uprawnieniami zalogowanego użytkownika BPP** (OAuth 2.1):
+
+```bash
+BPP_BASE_URL=https://bpp.umlub.pl uv run bpp-mcp --http --port 8000
+```
+
+Klient MCP (Claude) sam przeprowadza logowanie: wykrywa serwer autoryzacji BPP
+przez `/.well-known/oauth-protected-resource`, rejestruje się (DCR), otwiera
+przeglądarkę na logowanie BPP + ekran zgody (scope `read`), po czym wywołuje
+narzędzia z `Bearer`. `bpp-mcp` weryfikuje token przez `GET /api/v1/whoami/` i
+forwarduje token **bieżącego requestu** do `/api/v1/`. Zapis jest zablokowany
+serwerowo (read-only).
+
+**Bezpieczeństwo:** trzymaj `--host 127.0.0.1` (domyślnie). Bind na inny host
+wyłącza wbudowaną ochronę DNS-rebinding SDK i eksponuje serwer poza maszynę.
+Token jest forwardowany do API BPP bez wiązania `audience` (świadome odstępstwo
+od MCP-MUST: `bpp-mcp` i API BPP = ta sama domena zaufania; mitygacje: scope
+`read`, twardy read-only serwerowo, krótki TTL).
 
 ## Podłączenie do Claude Desktop
 

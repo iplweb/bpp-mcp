@@ -30,6 +30,7 @@ from typing import Any
 
 import httpx
 
+from .auth import current_bearer
 from .catalog import PREFIKSY_CACHOWALNE
 
 # Rozmiar pojedynczej strony przy auto-follow paginacji. Stronicujemy porcjami
@@ -62,10 +63,11 @@ class BppClient:
         backoff_base: float = 0.5,
     ) -> None:
         self._api_root = config.api_root
+        self._auth_tuple = config.auth_tuple
+        self._transport = config.transport
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0),
             headers={"Accept": "application/json"},
-            auth=config.auth_tuple,
             follow_redirects=True,
         )
         self._sem = asyncio.Semaphore(concurrency)
@@ -95,13 +97,30 @@ class BppClient:
                 full = full.copy_merge_params(czyste)
         return full
 
+    def _auth_kwargs(self) -> dict[str, Any]:
+        """Per-request auth. Bearer (bieżący request) wygrywa zawsze. W trybie
+        http brak bearera = błąd (żadnego cichego fallbacku na konto serwisowe).
+        W stdio: Basic (gdy skonfigurowany) albo anonimowo."""
+        bearer = current_bearer()
+        if bearer:
+            return {"headers": {"Authorization": f"Bearer {bearer}"}}
+        if self._transport == "http":
+            raise BppError(
+                "Brak tokenu OAuth w kontekście żądania (tryb http) — nie "
+                "forwarduję anonimowo ani przez konto serwisowe."
+            )
+        if self._auth_tuple:
+            return {"auth": self._auth_tuple}
+        return {}
+
     async def _request(self, full: httpx.URL) -> Any:
         """Wykonaj GET z retry×N i backoffem. Zwraca zdeserializowany JSON."""
+        auth_kwargs = self._auth_kwargs()
         ostatni: Exception | None = None
         for proba in range(self._max_retries + 1):
             async with self._sem:
                 try:
-                    resp = await self._client.get(full)
+                    resp = await self._client.get(full, **auth_kwargs)
                 except httpx.HTTPError as exc:
                     # Błąd transportu (connect/read/timeout) — kwalifikuje do retry.
                     ostatni = exc

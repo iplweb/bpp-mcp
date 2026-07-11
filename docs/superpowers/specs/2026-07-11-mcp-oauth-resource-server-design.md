@@ -188,3 +188,27 @@ respx/httpx mock + FastMCP in-memory:
   między połączeniami; klucz = token).
 - `bpp-mcp --http` — serwer tylko czeka na klienta; browser-flow inicjuje klient
   MCP, nie serwer (rozstrzygnięte).
+
+## 14. Rewizja po 2× review Fable planu (WIĄŻĄCE)
+
+Zweryfikowane empirycznie sondą na `mcp 1.28.1` — korygują §4/§6/§7:
+
+- **Źródło bearera (było błędne):** `get_access_token()` w narzędziu zwraca token
+  z chwili `initialize` (stale w stateful streamable HTTP — POTWIERDZONE). Token
+  bieżącego requestu bierzemy z `ctx.request_context.request` (Authorization
+  header) w chokepoincie `_client(ctx)` → ContextVar → `BppClient`. „Verifier
+  jest preflightem" nadal trzyma się dla WERYFIKACJI (transport), ale passthrough
+  musi używać per-request requestu, nie akcesora tokenu.
+- **Lifespan związany z config:** `BppClient` w lifespanie MUSI używać `config`
+  przekazanego do `build_mcp`, nie `Config.from_env()` — inaczej token idzie do
+  innej instancji (wyciek). Lifespan = closure w fabryce.
+- **`resource` z `/mcp`:** domyślny `resource_url` = kanoniczny URI serwera
+  (`http://host:port/mcp`); PRM ląduje pod `/.well-known/oauth-protected-resource/mcp`.
+- **Brak cichego fallbacku:** w trybie http brak bearera = twardy błąd (nie
+  Basic/anon — to podmiana tożsamości na konto serwisowe).
+- **BPP-down → HTTP 500** (nie 502/503): Starlette kieruje wyjątek verifiera do
+  `ServerErrorMiddleware`. Semantyka „5xx≠401→brak re-auth" zachowana; jawne
+  502/503 = future refinement.
+- **Cache:** eviction wygasłych + twardy cap (256).
+- Szczegóły i kod: plan `docs/superpowers/plans/2026-07-11-mcp-oauth-resource-server.md`
+  (sekcja „Rewizja po review Fable").
