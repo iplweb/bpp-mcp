@@ -5,15 +5,17 @@ z siedmiu narzędzi deleguje do czystej logiki w :mod:`bpp_mcp.tools`.
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Any
 
+import httpx
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 
-from . import tools
+from . import oauth_client, token_store, tools
 from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
 from .client import BppClient
 from .config import Config
@@ -313,17 +315,45 @@ def build_mcp(config: Config) -> FastMCP:
 mcp = build_mcp(replace(Config.from_env(), transport="stdio"))
 
 
+def _cmd_login(config: Config) -> None:
+    """Przeprowadź logowanie OAuth w przeglądarce i zapisz token do cache."""
+    istniejacy = token_store.load(config.base_url)
+    try:
+        ts = oauth_client.login(
+            config.base_url,
+            existing_client_id=istniejacy.client_id if istniejacy else None,
+        )
+    except (httpx.HTTPError, ValueError, TimeoutError, RuntimeError, KeyError) as exc:
+        print(f"Logowanie nieudane: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    token_store.save(ts)
+    kto = ts.username or "(nieznany użytkownik)"
+    print(f"Zalogowano jako {kto} @ {config.base_url}")
+
+
 def main() -> None:
-    """``bpp-mcp``: bez flag → stdio (anon/Basic); ``--http`` → Streamable HTTP
-    + OAuth (Resource Server)."""
+    """``bpp-mcp``: bez podkomendy → serwer (stdio; ``--http`` → Streamable HTTP
+    + OAuth RS). ``login`` → logowanie w przeglądarce; ``logout`` → wyczyść token."""
     parser = argparse.ArgumentParser(prog="bpp-mcp")
     parser.add_argument(
         "--http", action="store_true", help="Streamable HTTP + OAuth (Resource Server)."
     )
     parser.add_argument("--host", default=None, help="Host HTTP (dom. 127.0.0.1).")
     parser.add_argument("--port", type=int, default=None, help="Port HTTP.")
+    sub = parser.add_subparsers(dest="cmd")
+    sub.add_parser("login", help="Zaloguj się do BPP (przeglądarka) i zapisz token.")
+    sub.add_parser("logout", help="Usuń zapisany token tej instancji BPP.")
     args = parser.parse_args()
     config = Config.from_env()
+
+    if args.cmd == "login":
+        _cmd_login(config)
+        return
+    if args.cmd == "logout":
+        token_store.clear(config.base_url)
+        print(f"Wylogowano z {config.base_url}")
+        return
+
     if args.http:
         config = replace(
             config,
