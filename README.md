@@ -1,5 +1,7 @@
 # bpp-mcp
 
+[![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
+
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP** (Bibliografia
 Publikacji Pracowników). Wystawia read-only, anonimowe API BPP (`/api/v1/`)
 jako zestaw kuratorowanych, typowanych narzędzi dla Claude Desktop, Claude
