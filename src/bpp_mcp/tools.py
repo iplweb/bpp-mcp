@@ -36,12 +36,15 @@ def _clamp_limit(limit: int, sufit: int = MAKS_LIMIT) -> int:
 
 
 # Zbundlowane schematy DjangoQL-dla-LLM (dane pakietu w ``bpp_mcp/data/``).
-# Mapa ``model → nazwa pliku``. Na razie tylko ``rekord`` (bpp.Rekord); klucz
-# jest tu, by dołożenie kolejnych modeli było jedną linią. Źródło pliku:
-# repo iplweb/bpp-schema-for-llm (generowane z instancji BPP, przeskanowane —
-# wartości wyłącznie bezpiecznych słowników, ZERO danych osób/instytucji).
+# Mapa ``model → nazwa pliku`` — trzy kanoniczne korzenie odpowiadające
+# endpointom ``/api/v1/zapytanie/{rekord,autor,autorzy}/``. Wszystkie generowane
+# tym samym RekordLLMSchema (allow-lista + blocklist PII + no_value_targets),
+# komendą ``opisz_schemat_djangoql_dla_llm --wszystkie-korzenie`` z żywej bazy:
+# wartości wyłącznie bezpiecznych słowników, ZERO danych osób/instytucji.
 _SCHEMATY_DJANGOQL: dict[str, str] = {
     "rekord": "rekord_djangoql_schema.compact.txt",
+    "autor": "autor_djangoql_schema.compact.txt",
+    "autorzy": "autorzy_djangoql_schema.compact.txt",
 }
 
 
@@ -517,8 +520,9 @@ async def zapytanie_autorzy(
 
 
 async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
-    """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego modelu (na razie
-    tylko ``rekord`` = ``bpp.Rekord``).
+    """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego korzenia: ``rekord``
+    (``bpp.Rekord``), ``autor`` (``bpp.Autor``) lub ``autorzy`` (``bpp.Autorzy``)
+    — po jednym na endpoint ``/api/v1/zapytanie/{rekord,autor,autorzy}/``.
 
     Zawartość zwracanego tekstu:
 

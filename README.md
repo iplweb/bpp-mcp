@@ -113,7 +113,7 @@ claude mcp add bpp \
 | `zapytanie_rekord(q, limit=25, offset=0)` | **wykonaj** DjangoQL po publikacjach (`bpp.Rekord`) — autoryzowane |
 | `zapytanie_autor(q, limit=25, offset=0)` | **wykonaj** DjangoQL po autorach (`bpp.Autor`) — autoryzowane |
 | `zapytanie_autorzy(q, limit=25, offset=0)` | **wykonaj** DjangoQL po wpisach autorstwa (`bpp.Autorzy`) — autoryzowane |
-| `djangoql_schema(model="rekord")` | schemat DjangoQL-dla-LLM modelu Rekord (do budowy zapytań) |
+| `djangoql_schema(model="rekord")` | schemat DjangoQL-dla-LLM korzenia `rekord`/`autor`/`autorzy` (do budowy zapytań) |
 
 **Zapytania DjangoQL (`zapytanie_*`) są AUTORYZOWANE** — endpointy
 `/api/v1/zapytanie/{rekord,autor,autorzy}/` wymagają `Bearer` (tryb OAuth/HTTP,
@@ -167,7 +167,9 @@ Dodatkowo serwer wystawia **prompt** MCP (nie narzędzie wykonujące):
 
 ## DjangoQL — schemat do budowy zapytań (`djangoql_schema`)
 
-`djangoql_schema()` zwraca zbundlowany, bezpieczny schemat modelu `bpp.Rekord`
+`djangoql_schema(model)` zwraca zbundlowany, bezpieczny schemat jednego z trzech
+korzeni — `rekord` (`bpp.Rekord`), `autor` (`bpp.Autor`), `autorzy`
+(`bpp.Autorzy`) — po jednym na endpoint `/api/v1/zapytanie/*`
 dla języka [DjangoQL](https://github.com/ivelum/djangoql): reguły gramatyki
 (operatory per typ, negacja, trawersowanie relacji, sufiksy `__year` / `__count`
 itd.), pola z typami oraz sekcję `dictionaries` z dozwolonymi WARTOŚCIAMI
@@ -180,12 +182,10 @@ Dzięki temu LLM może zbudować PRECYZYJNE zapytanie, np.:
 rok >= 2020 and jezyk.nazwa = "angielski" and impact_factor > 0
 ```
 
-- **Konstrukcja tak — wykonanie NIE.** To narzędzie tylko *buduje* zapytania.
-  Samo *wykonanie* wyszukiwania DjangoQL (funkcja „zapytanie" w BPP) jest dziś
-  dostępne WYŁĄCZNIE dla użytkownika **zalogowanego** i nie istnieje w publicznym,
-  anonimowym API — dlatego serwer nie ma narzędzia je uruchamiającego. Gdy
-  anon-API zyska taką możliwość, dołożymy osobne `zapytanie(query)` (miejsce
-  oznaczone `TODO` w `server.py`).
+- **Konstrukcja tu, wykonanie osobno.** To narzędzie tylko *buduje* zapytania.
+  Wykonasz je narzędziami `zapytanie_rekord` / `zapytanie_autor` /
+  `zapytanie_autorzy` (patrz tabela narzędzi) — wymagają zalogowania
+  (Bearer/sesja + uprawnienia redaktora); anonimowo zwracają 401/403.
 - **Wersjonowanie.** Pierwsza linia schematu to `# BPP <wersja>` (np.
   `# BPP 202607.1397`). Plik jest generowany per wersja BPP i powinien pasować
   do odpytywanej instancji. Źródło: repo
@@ -202,9 +202,9 @@ wywołać `djangoql_schema("rekord")` (jedyne źródło pól, typów, relacji i 
 `dictionaries`), podaje zwięzłe reguły (operator wg typu, trawersacja relacji
 kropką, wartości słownikowe dosłownie, negacja tylko `!=`/`!~`/`not in`,
 łączenie `and`/`or` + nawiasy), a na końcu każe zwrócić gotowe zapytanie w bloku
-kodu do wklejenia w edytor „zapytanie" BPP. **Wykonanie** takiego zapytania w
-BPP wymaga zalogowania (publiczne, anonimowe API go nie uruchamia) — prompt, tak
-jak `djangoql_schema`, tylko *konstruuje*, nie *wykonuje*.
+kodu. **Wykonasz** je narzędziem `zapytanie_rekord` (po zalogowaniu) albo wklejasz
+w edytor „zapytanie" BPP — prompt, tak jak `djangoql_schema`, tylko *konstruuje*,
+nie *wykonuje*.
 
 ## Rozwój
 

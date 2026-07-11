@@ -63,6 +63,36 @@ async def test_djangoql_schema_nieznany_model():
     assert "Nieznany model" in str(exc.value)
 
 
+async def test_djangoql_schema_korzen_autor():
+    wynik = await tools.djangoql_schema("autor")
+    assert wynik["model"] == "autor"
+    assert "# Model: bpp.Autor" in wynik["schemat"]
+    assert "start model: bpp.autor" in wynik["schemat"]
+
+
+async def test_djangoql_schema_korzen_autorzy():
+    wynik = await tools.djangoql_schema("autorzy")
+    assert wynik["model"] == "autorzy"
+    assert "start model: bpp.autorzy" in wynik["schemat"]
+
+
+async def test_djangoql_schema_trzy_korzenie_dostepne():
+    for model in ("rekord", "autor", "autorzy"):
+        schemat = (await tools.djangoql_schema(model))["schemat"]
+        assert schemat.startswith("# BPP"), model
+        assert "dictionaries" in schemat, model
+
+
+async def test_zasoby_autor_autorzy_spakowane():
+    for fname in (
+        "autor_djangoql_schema.compact.txt",
+        "autorzy_djangoql_schema.compact.txt",
+    ):
+        zasob = resources.files("bpp_mcp").joinpath("data", fname)
+        assert zasob.is_file(), fname
+        assert zasob.read_text(encoding="utf-8").startswith("# BPP")
+
+
 def test_zasob_danych_jest_spakowany():
     # importlib.resources znajduje plik jako dane pakietu (nie ścieżka względna)
     # — dowód, że zasób jest częścią dystrybucji ``bpp_mcp``.
