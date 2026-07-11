@@ -17,8 +17,9 @@ WHOAMI = f"{BASE}/api/v1/whoami/"
 @pytest.mark.asyncio
 @respx.mock
 async def test_valid_token():
-    respx.get(WHOAMI).mock(return_value=httpx.Response(
-        200, json={"id": 7, "username": "kowalski"}))
+    respx.get(WHOAMI).mock(
+        return_value=httpx.Response(200, json={"id": 7, "username": "kowalski"})
+    )
     tok = await WhoamiTokenVerifier(BASE).verify_token("OPAQUE")
     assert tok is not None
     assert tok.token == "OPAQUE"
@@ -60,8 +61,9 @@ async def test_niejson_unavailable():
 @pytest.mark.asyncio
 @respx.mock
 async def test_cache_hit_w_ttl():
-    route = respx.get(WHOAMI).mock(return_value=httpx.Response(
-        200, json={"id": 1, "username": "a"}))
+    route = respx.get(WHOAMI).mock(
+        return_value=httpx.Response(200, json={"id": 1, "username": "a"})
+    )
     v = WhoamiTokenVerifier(BASE, ttl=60.0)
     await v.verify_token("T")
     await v.verify_token("T")
@@ -71,8 +73,9 @@ async def test_cache_hit_w_ttl():
 @pytest.mark.asyncio
 @respx.mock
 async def test_ttl_0_reweryfikuje():
-    route = respx.get(WHOAMI).mock(return_value=httpx.Response(
-        200, json={"id": 1, "username": "a"}))
+    route = respx.get(WHOAMI).mock(
+        return_value=httpx.Response(200, json={"id": 1, "username": "a"})
+    )
     v = WhoamiTokenVerifier(BASE, ttl=0.0)
     await v.verify_token("T")
     await v.verify_token("T")
@@ -82,6 +85,7 @@ async def test_ttl_0_reweryfikuje():
 def test_bearer_from_request_i_contextvar():
     class Req:
         headers = {"authorization": "Bearer ABC"}
+
     assert bearer_from_request(Req()) == "ABC"
     assert bearer_from_request(None) is None
     set_current_bearer("XYZ")

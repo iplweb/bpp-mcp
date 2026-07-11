@@ -2,8 +2,12 @@ from bpp_mcp.config import Config
 
 
 def test_from_env_transport_defaults(monkeypatch):
-    for k in ("BPP_MCP_TRANSPORT", "BPP_MCP_HTTP_HOST",
-              "BPP_MCP_HTTP_PORT", "BPP_MCP_RESOURCE_URL"):
+    for k in (
+        "BPP_MCP_TRANSPORT",
+        "BPP_MCP_HTTP_HOST",
+        "BPP_MCP_HTTP_PORT",
+        "BPP_MCP_RESOURCE_URL",
+    ):
         monkeypatch.delenv(k, raising=False)
     cfg = Config.from_env()
     assert cfg.transport == "stdio"

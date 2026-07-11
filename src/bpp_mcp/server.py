@@ -4,14 +4,17 @@ z siedmiu narzędzi deleguje do czystej logiki w :mod:`bpp_mcp.tools`.
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 
 from . import tools
+from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
 from .client import BppClient
 from .config import Config
 
@@ -23,23 +26,14 @@ class KontekstApp:
     client: BppClient
 
 
-@asynccontextmanager
-async def lifespan(_server: FastMCP) -> AsyncIterator[KontekstApp]:
-    client = BppClient(Config.from_env())
-    try:
-        yield KontekstApp(client=client)
-    finally:
-        await client.aclose()
-
-
-mcp = FastMCP("bpp-mcp", lifespan=lifespan)
-
-
 def _client(ctx: Context) -> BppClient:
+    """Zwróć współdzielony klient ORAZ ustaw w kontekście token bieżącego
+    requestu (z ctx.request_context.request — NIE get_access_token, K1)."""
+    request = getattr(ctx.request_context, "request", None)
+    set_current_bearer(bearer_from_request(request))
     return ctx.request_context.lifespan_context.client
 
 
-@mcp.tool()
 async def szukaj_publikacji(
     ctx: Context,
     q: str,
@@ -52,13 +46,11 @@ async def szukaj_publikacji(
     return await tools.szukaj_publikacji(_client(ctx), q, rok_od, rok_do, limit)
 
 
-@mcp.tool()
 async def szukaj_autora(ctx: Context, nazwisko: str) -> dict[str, Any]:
     """Znajdź autorów po (bieżącym) nazwisku — zwraca ID/slug/jednostkę."""
     return await tools.szukaj_autora(_client(ctx), nazwisko)
 
 
-@mcp.tool()
 async def publikacje_autora(
     ctx: Context,
     id_lub_slug: str,
@@ -72,7 +64,6 @@ async def publikacje_autora(
     )
 
 
-@mcp.tool()
 async def publikacje_jednostki(
     ctx: Context,
     id_lub_slug: str,
@@ -86,7 +77,6 @@ async def publikacje_jednostki(
     )
 
 
-@mcp.tool()
 async def pobierz_rekord(
     ctx: Context,
     typ: str,
@@ -99,7 +89,6 @@ async def pobierz_rekord(
     return await tools.pobierz_rekord(_client(ctx), typ, id, pelne_dane_autorow)
 
 
-@mcp.tool()
 async def lista_publikacji(
     ctx: Context,
     typ: str,
@@ -124,14 +113,12 @@ async def lista_publikacji(
     )
 
 
-@mcp.tool()
 async def slownik(ctx: Context, rodzaj: str) -> dict[str, Any]:
     """Pobierz mały słownik referencyjny (charakter_formalny/jezyk/
     dyscyplina_naukowa/…) jednym żądaniem. Odrzuca dane wolumenowe."""
     return await tools.slownik(_client(ctx), rodzaj)
 
 
-@mcp.tool()
 async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     """Zwróć zbundlowany schemat DjangoQL-dla-LLM modelu bpp.Rekord: reguły
     języka DjangoQL + pola/typy/operatory/relacje + dozwolone WARTOŚCI wyłącznie
@@ -199,13 +186,6 @@ wymaga zalogowania — publiczne, anonimowe API tego nie uruchamia).
 """
 
 
-@mcp.prompt(
-    name="zloz_zapytanie_djangoql",
-    description=(
-        "Ułóż (nie wykonuj) zapytanie DjangoQL dla modelu bpp.Rekord na "
-        "podstawie opisu po polsku — do wklejenia w edytor „zapytanie” BPP."
-    ),
-)
 def zloz_zapytanie_djangoql(opis: str) -> str:
     """Zwróć instrukcję-wiadomość dla klienta LLM: jak — korzystając z
     narzędzia ``djangoql_schema("rekord")`` — złożyć poprawne zapytanie
@@ -221,9 +201,87 @@ def zloz_zapytanie_djangoql(opis: str) -> str:
 # jest tylko dla zalogowanych, więc świadomie NIE rejestrujemy tego narzędzia.
 
 
+def _register(mcp: FastMCP) -> None:
+    """Zarejestruj 8 narzędzi + prompt na danej instancji FastMCP."""
+    mcp.tool()(szukaj_publikacji)
+    mcp.tool()(szukaj_autora)
+    mcp.tool()(publikacje_autora)
+    mcp.tool()(publikacje_jednostki)
+    mcp.tool()(pobierz_rekord)
+    mcp.tool()(lista_publikacji)
+    mcp.tool()(slownik)
+    mcp.tool()(djangoql_schema)
+    mcp.prompt(
+        name="zloz_zapytanie_djangoql",
+        description=(
+            "Ułóż (nie wykonuj) zapytanie DjangoQL dla modelu bpp.Rekord na "
+            "podstawie opisu po polsku — do wklejenia w edytor „zapytanie” BPP."
+        ),
+    )(zloz_zapytanie_djangoql)
+
+
+def _auth_kwargs(config: Config) -> dict[str, Any]:
+    """Argumenty auth do FastMCP: puste w stdio; w http token_verifier +
+    AuthSettings (RS) + host/port."""
+    if config.transport != "http":
+        return {}
+    return {
+        "token_verifier": WhoamiTokenVerifier(config.base_url),
+        "auth": AuthSettings(
+            issuer_url=config.base_url,
+            resource_server_url=config.effective_resource_url,
+            required_scopes=["read"],
+        ),
+        "host": config.http_host,
+        "port": config.http_port,
+    }
+
+
+def build_mcp(config: Config) -> FastMCP:
+    """Zbuduj serwer FastMCP. Lifespan zakłada BppClient związany z TYM config
+    (W2 — nie z env), więc verifier i klient używają tej samej instancji BPP."""
+
+    @asynccontextmanager
+    async def lifespan(_server: FastMCP) -> AsyncIterator[KontekstApp]:
+        client = BppClient(config)
+        try:
+            yield KontekstApp(client=client)
+        finally:
+            await client.aclose()
+
+    mcp = FastMCP("bpp-mcp", lifespan=lifespan, **_auth_kwargs(config))
+    _register(mcp)
+    return mcp
+
+
+# Modułowy serwer — ZAWSZE stdio (D2: niezależny od env BPP_MCP_TRANSPORT),
+# używany przez stdio-entry i istniejące testy importujące ``mcp``.
+mcp = build_mcp(replace(Config.from_env(), transport="stdio"))
+
+
 def main() -> None:
-    """Punkt wejścia konsoli (``bpp-mcp``) — uruchamia serwer po stdio."""
-    mcp.run()
+    """``bpp-mcp``: bez flag → stdio (anon/Basic); ``--http`` → Streamable HTTP
+    + OAuth (Resource Server)."""
+    parser = argparse.ArgumentParser(prog="bpp-mcp")
+    parser.add_argument(
+        "--http", action="store_true", help="Streamable HTTP + OAuth (Resource Server)."
+    )
+    parser.add_argument("--host", default=None, help="Host HTTP (dom. 127.0.0.1).")
+    parser.add_argument("--port", type=int, default=None, help="Port HTTP.")
+    args = parser.parse_args()
+    config = Config.from_env()
+    if args.http:
+        config = replace(
+            config,
+            transport="http",
+            http_host=args.host or config.http_host,
+            http_port=args.port or config.http_port,
+        )
+    server = build_mcp(config) if config.transport == "http" else mcp
+    if config.transport == "http":
+        server.run(transport="streamable-http")
+    else:
+        server.run()
 
 
 if __name__ == "__main__":
