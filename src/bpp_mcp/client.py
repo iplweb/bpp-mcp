@@ -40,7 +40,19 @@ PAGE_LIMIT = 50
 
 
 class BppError(Exception):
-    """Bazowy, czytelny błąd domenowy zwracany narzędziom MCP."""
+    """Bazowy, czytelny błąd domenowy zwracany narzędziom MCP.
+
+    Gdy błąd pochodzi z odpowiedzi HTTP (4xx/5xx), niesie ``status_code`` oraz
+    (dla 4xx z ciałem JSON) zdeserializowany ``payload`` — narzędzia mapują je
+    na sensowne komunikaty (np. 400 DjangoQL → pozycja błędu, 503 → „zawęź").
+    """
+
+    def __init__(
+        self, *args: object, status_code: int | None = None, payload: Any = None
+    ) -> None:
+        super().__init__(*args)
+        self.status_code = status_code
+        self.payload = payload
 
 
 class BppNotFound(BppError):
@@ -113,8 +125,14 @@ class BppClient:
             return {"auth": self._auth_tuple}
         return {}
 
-    async def _request(self, full: httpx.URL) -> Any:
-        """Wykonaj GET z retry×N i backoffem. Zwraca zdeserializowany JSON."""
+    async def _request(self, full: httpx.URL, *, retry_5xx: bool = True) -> Any:
+        """Wykonaj GET z retry×N i backoffem. Zwraca zdeserializowany JSON.
+
+        ``retry_5xx=False`` wyłącza ponawianie na 5xx (błąd sieci nadal jest
+        ponawiany) — używane przez zapytania DjangoQL, bo 503 = deterministyczny
+        ``statement_timeout``, więc ponawianie tylko 3× re-uruchamiałoby ten sam
+        wolny SQL.
+        """
         auth_kwargs = self._auth_kwargs()
         ostatni: Exception | None = None
         for proba in range(self._max_retries + 1):
@@ -130,9 +148,15 @@ class BppClient:
                             f"Zasób nie istnieje lub jest niewidoczny: {full}"
                         )
                     if resp.status_code >= 500:
-                        ostatni = BppNetworkError(
-                            f"Serwer BPP zwrócił {resp.status_code} dla {full}"
+                        blad_5xx = BppNetworkError(
+                            f"Serwer BPP zwrócił {resp.status_code} dla {full}",
+                            status_code=resp.status_code,
                         )
+                        # ``retry_5xx=False`` → od razu podnosimy (bez ponawiania
+                        # deterministycznego 503 statement_timeout).
+                        if not retry_5xx:
+                            raise blad_5xx
+                        ostatni = blad_5xx
                     else:
                         try:
                             resp.raise_for_status()
@@ -143,8 +167,16 @@ class BppClient:
                             # LLM-a. Bez tego zostawał sam suchy kod stanu.
                             tresc = " ".join(resp.text.split())[:300]
                             dodatek = f" — {tresc}" if tresc else ""
+                            try:
+                                # Ciało 4xx bywa JSON-em (DjangoQL 400:
+                                # {error,line,column,mark}) — zachowaj strukturę.
+                                payload = resp.json()
+                            except ValueError:
+                                payload = None
                             raise BppError(
-                                f"Błąd HTTP {resp.status_code} dla {full}{dodatek}"
+                                f"Błąd HTTP {resp.status_code} dla {full}{dodatek}",
+                                status_code=resp.status_code,
+                                payload=payload,
                             ) from exc
                         return resp.json()
             if proba < self._max_retries:
@@ -166,7 +198,12 @@ class BppClient:
         return prefiks in PREFIKSY_CACHOWALNE
 
     async def get_json(
-        self, url: str, params: dict | None = None, *, use_cache: bool = True
+        self,
+        url: str,
+        params: dict | None = None,
+        *,
+        use_cache: bool = True,
+        retry_5xx: bool = True,
     ) -> Any:
         """Pobierz i zdeserializuj JSON.
 
@@ -181,7 +218,7 @@ class BppClient:
         cachowalne = use_cache and self._prefiks_cachowalny(full)
         if cachowalne and klucz in self._cache:
             return self._cache[klucz]
-        dane = await self._request(full)
+        dane = await self._request(full, retry_5xx=retry_5xx)
         if cachowalne:
             self._cache[klucz] = dane
         return dane
@@ -193,6 +230,7 @@ class BppClient:
         limit: int = 25,
         *,
         page_limit: int = PAGE_LIMIT,
+        retry_5xx: bool = True,
     ) -> tuple[list[Any], int, bool]:
         """Auto-follow paginacji ``LimitOffset`` do zebrania ``limit`` pozycji.
 
@@ -238,10 +276,12 @@ class BppClient:
                 break
             poprzedni_url = url
             if pierwsza:
-                dane = await self.get_json(url, params=query, use_cache=False)
+                dane = await self.get_json(
+                    url, params=query, use_cache=False, retry_5xx=retry_5xx
+                )
                 pierwsza = False
             else:
-                dane = await self.get_json(url, use_cache=False)
+                dane = await self.get_json(url, use_cache=False, retry_5xx=retry_5xx)
             strony += 1
             if not isinstance(dane, dict):
                 break

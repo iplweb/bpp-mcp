@@ -28,7 +28,8 @@ async def test_djangoql_schema_zawiera_wskazowke_jak_zlozyc():
     assert isinstance(wynik["jak_zlozyc"], str)
     assert "operator" in wynik["jak_zlozyc"]
     assert "dictionaries" in wynik["jak_zlozyc"]
-    assert "wklej" in wynik["jak_zlozyc"]
+    # Wskazówka kieruje do WYKONANIA zapytania właściwym narzędziem.
+    assert "zapytanie_rekord" in wynik["jak_zlozyc"]
 
 
 def test_prompt_zloz_zapytanie_wplata_opis_i_reguly():

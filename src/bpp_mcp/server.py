@@ -119,15 +119,52 @@ async def slownik(ctx: Context, rodzaj: str) -> dict[str, Any]:
     return await tools.slownik(_client(ctx), rodzaj)
 
 
+async def zapytanie_rekord(
+    ctx: Context, q: str, limit: int = 25, offset: int = 0
+) -> dict[str, Any]:
+    """Wykonaj precyzyjne zapytanie DjangoQL po PUBLIKACJACH (bpp.Rekord) —
+    autoryzowany endpoint /api/v1/zapytanie/rekord/. Zwraca płaskie rekordy
+    w kopercie z laczna_liczba. Pola/operatory/słowniki: najpierw pobierz
+    djangoql_schema("rekord"). Wymaga zalogowania (Bearer OAuth albo sesja +
+    uprawnienia: superuser lub staff „wprowadzanie danych"). Błędy: 400 zła
+    składnia/pole (z pozycją) → popraw q; 401 token; 403 brak uprawnień;
+    503 timeout → zawęź."""
+    return await tools.zapytanie_rekord(_client(ctx), q, limit, offset)
+
+
+async def zapytanie_autor(
+    ctx: Context, q: str, limit: int = 25, offset: int = 0
+) -> dict[str, Any]:
+    """Wykonaj precyzyjne zapytanie DjangoQL po AUTORACH (bpp.Autor) —
+    autoryzowany endpoint /api/v1/zapytanie/autor/. Filtruj m.in. po nazwisko,
+    imiona, orcid, poprzednie_nazwiska, tytul.skrot, aktualna_jednostka.nazwa,
+    pbn_uid.pbnId. Pola PII (email/adnotacje/opis) są zablokowane → 400.
+    Auth i błędy jak w zapytanie_rekord."""
+    return await tools.zapytanie_autor(_client(ctx), q, limit, offset)
+
+
+async def zapytanie_autorzy(
+    ctx: Context, q: str, limit: int = 25, offset: int = 0
+) -> dict[str, Any]:
+    """Wykonaj precyzyjne zapytanie DjangoQL po WPISACH AUTORSTWA (bpp.Autorzy,
+    autor-na-rekordzie) — autoryzowany endpoint /api/v1/zapytanie/autorzy/.
+    Filtruj m.in. po zapisany_jako, kolejnosc, afiliuje, zatrudniony,
+    typ_odpowiedzialnosci.skrot, jednostka.nazwa, dyscyplina_naukowa.nazwa oraz
+    trawersacje rekord.… (rekord.rok) i autor.… (autor.nazwisko). Auth i błędy
+    jak w zapytanie_rekord."""
+    return await tools.zapytanie_autorzy(_client(ctx), q, limit, offset)
+
+
 async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     """Zwróć zbundlowany schemat DjangoQL-dla-LLM modelu bpp.Rekord: reguły
     języka DjangoQL + pola/typy/operatory/relacje + dozwolone WARTOŚCI wyłącznie
     bezpiecznych słowników (ZERO danych osób/instytucji). Służy do KONSTRUKCJI
     precyzyjnych zapytań — wersja schematu jest w nagłówku (``# BPP <wersja>``).
 
-    UWAGA: samo WYKONANIE zapytania DjangoQL („zapytanie") w BPP wymaga
-    ZALOGOWANEGO użytkownika i nie ma go jeszcze w publicznym anon-API — to
-    narzędzie tylko buduje zapytania, nie uruchamia ich."""
+    To narzędzie tylko BUDUJE zapytanie. Aby je WYKONAĆ, użyj narzędzi
+    zapytanie_rekord / zapytanie_autor / zapytanie_autorzy — wymagają
+    zalogowania (Bearer OAuth albo sesja + uprawnienia redaktora); anonimowo
+    zwracają 401/403."""
     # Zasób lokalny (dane pakietu) — brak I/O sieciowego, więc nie potrzebuje
     # BppClient z lifespan-contextu.
     return await tools.djangoql_schema(model)
@@ -181,8 +218,9 @@ KROK 3 — ZWALIDUJ zanim oddasz:
 - istnienie/brak relacji wyrażone przez `!= None` / `= None`.
 
 KROK 4 — ODDAJ WYNIK: JEDNO gotowe zapytanie DjangoQL w bloku kodu, a pod nim
-jedno zdanie: wklej to w edytor „zapytanie" w BPP (model: rekord; wykonanie
-wymaga zalogowania — publiczne, anonimowe API tego nie uruchamia).
+jedno zdanie: to zapytanie WYKONASZ narzędziem zapytanie_rekord (model rekord)
+po zalogowaniu (Bearer/sesja + uprawnienia redaktora), albo wklejając je do
+edytora „zapytanie" w BPP; anonimowe API go nie uruchamia.
 """
 
 
@@ -190,19 +228,19 @@ def zloz_zapytanie_djangoql(opis: str) -> str:
     """Zwróć instrukcję-wiadomość dla klienta LLM: jak — korzystając z
     narzędzia ``djangoql_schema("rekord")`` — złożyć poprawne zapytanie
     DjangoQL realizujące ``opis`` użytkownika. Prompt tylko KONSTRUUJE
-    zapytanie (wykonanie w BPP wymaga zalogowania; nie ma go w anon-API)."""
+    zapytanie; wykonasz je narzędziem ``zapytanie_rekord`` (po zalogowaniu)."""
     return PROMPT_ZLOZ_ZAPYTANIE.format(opis=opis.strip())
 
 
-# TODO(anon-API): gdy publiczne API BPP zyska wykonywanie zapytań DjangoQL dla
-# użytkownika anonimowego, dołożyć tu narzędzie ``zapytanie(query: str)``
-# delegujące do np. ``tools.zapytanie`` (POST/GET do endpointu wyszukiwania).
-# Konfiguracja endpointu → catalog.py / config.py. Dziś funkcja „zapytanie"
-# jest tylko dla zalogowanych, więc świadomie NIE rejestrujemy tego narzędzia.
+# Wykonywanie zapytań DjangoQL po API jest już dostępne (AUTORYZOWANE) przez
+# narzędzia zapytanie_rekord / zapytanie_autor / zapytanie_autorzy wyżej —
+# endpointy /api/v1/zapytanie/{rekord,autor,autorzy}/ za Bearer/sesją + gate.
+# Anonimowe wykonanie DjangoQL nadal NIE istnieje (i może nigdy nie powstać);
+# dlatego te narzędzia poprawnie zwracają 401/403 bez ważnego tokenu/uprawnień.
 
 
 def _register(mcp: FastMCP) -> None:
-    """Zarejestruj 8 narzędzi + prompt na danej instancji FastMCP."""
+    """Zarejestruj 11 narzędzi + prompt na danej instancji FastMCP."""
     mcp.tool()(szukaj_publikacji)
     mcp.tool()(szukaj_autora)
     mcp.tool()(publikacje_autora)
@@ -210,6 +248,9 @@ def _register(mcp: FastMCP) -> None:
     mcp.tool()(pobierz_rekord)
     mcp.tool()(lista_publikacji)
     mcp.tool()(slownik)
+    mcp.tool()(zapytanie_rekord)
+    mcp.tool()(zapytanie_autor)
+    mcp.tool()(zapytanie_autorzy)
     mcp.tool()(djangoql_schema)
     mcp.prompt(
         name="zloz_zapytanie_djangoql",

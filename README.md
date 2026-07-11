@@ -110,13 +110,24 @@ claude mcp add bpp \
 | `pobierz_rekord(typ, id, pelne_dane_autorow=False)` | detal rekordu z rozwiniętymi relacjami |
 | `lista_publikacji(typ, rok_od?, rok_do?, charakter_formalny?, zmienione_po?, limit=25, offset=0)` | harvest/przyrost listy publikacji |
 | `slownik(rodzaj)` | mały słownik referencyjny (tłumaczenie ID↔nazwa) |
+| `zapytanie_rekord(q, limit=25, offset=0)` | **wykonaj** DjangoQL po publikacjach (`bpp.Rekord`) — autoryzowane |
+| `zapytanie_autor(q, limit=25, offset=0)` | **wykonaj** DjangoQL po autorach (`bpp.Autor`) — autoryzowane |
+| `zapytanie_autorzy(q, limit=25, offset=0)` | **wykonaj** DjangoQL po wpisach autorstwa (`bpp.Autorzy`) — autoryzowane |
 | `djangoql_schema(model="rekord")` | schemat DjangoQL-dla-LLM modelu Rekord (do budowy zapytań) |
+
+**Zapytania DjangoQL (`zapytanie_*`) są AUTORYZOWANE** — endpointy
+`/api/v1/zapytanie/{rekord,autor,autorzy}/` wymagają `Bearer` (tryb OAuth/HTTP,
+patrz wyżej) albo sesji, oraz uprawnień redaktora (superuser lub staff w grupie
+„wprowadzanie danych"). Bez tego zwracają czytelny błąd: 401 (token), 403 (brak
+uprawnień), 400 (zła składnia/pole, z pozycją do korekty; pola PII jak
+`autor.email` są zablokowane), 503 (timeout — zawęź). Buduj zapytanie z
+`djangoql_schema("rekord")`; w trybie stdio bez tokenu dostaniesz 401/403.
 
 Dodatkowo serwer wystawia **prompt** MCP (nie narzędzie wykonujące):
 
 | Prompt | Rola |
 |---|---|
-| `zloz_zapytanie_djangoql(opis)` | złóż zapytanie DjangoQL do wklejenia (z opisu po polsku) |
+| `zloz_zapytanie_djangoql(opis)` | złóż zapytanie DjangoQL (z opisu po polsku) — wykonasz je `zapytanie_rekord` |
 
 `typ` w `pobierz_rekord` / `lista_publikacji`: `wydawnictwo_ciagle`,
 `wydawnictwo_zwarte`, `patent`, `praca_doktorska`, `praca_habilitacyjna`.
@@ -130,8 +141,12 @@ Dodatkowo serwer wystawia **prompt** MCP (nie narzędzie wykonujące):
 
 - **`szukaj_publikacji` i `szukaj_autora` wymagają instancji BPP z Fazą 0**
   (rozszerzenie API o wyszukiwanie). Na starszej instancji `szukaj_publikacji`
-  zwróci czytelny błąd (404 → komunikat o wymaganej wersji). Pozostałe pięć
-  narzędzi działa na każdej wersji API.
+  zwróci czytelny błąd (404 → komunikat o wymaganej wersji).
+- **`zapytanie_rekord/autor/autorzy` wymagają nowszej instancji BPP** (z
+  endpointami `/api/v1/zapytanie/*`) **oraz uwierzytelnienia** (Bearer/sesja +
+  uprawnienia redaktora) — patrz tabela wyżej. Pozostałe narzędzia
+  (`publikacje_*`, `pobierz_rekord`, `lista_publikacji`, `slownik`) są anonimowe
+  i działają na każdej wersji API.
 - **`szukaj_autora` — wykrywanie możliwości:** django-filter po cichu ignoruje
   nieznane parametry. Na starej instancji filtr `nazwisko` zostanie
   zignorowany i endpoint zwróci *wszystkich* autorów bez błędu. Narzędzie
