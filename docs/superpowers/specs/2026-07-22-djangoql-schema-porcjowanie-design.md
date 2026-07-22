@@ -95,7 +95,7 @@ Pojedyncza dobrana sekcja modelu: 0,3–8,4 kB (mediana ~0,9 kB).
 
 Czysty parser tekstu: bez I/O, bez sieci, bez zależności od `tools.py`.
 Testowalny na sztucznym tekście, bez dotykania zasobów pakietu. Powód
-wydzielenia: `tools.py` ma już 570+ linii i miesza wywołania HTTP z logiką;
+wydzielenia: `tools.py` ma już 557 linii i miesza wywołania HTTP z logiką;
 parser jest samodzielną jednostką o wąskim interfejsie.
 
 Interfejs publiczny modułu:
@@ -160,6 +160,37 @@ Zwrot:
   poprawić literówkę w nazwie sekcji bez dodatkowej rundy wywołań
 - `sekcje_dostepne` nie zawiera nazwy sekcji korzenia ani `dictionaries` — one
   są już w rdzeniu
+
+### Rozstrzygnięcia szczegółowe
+
+Żeby implementujący nie musiał zgadywać:
+
+- **separator sklejania**: każdy blok jest przechowywany bez końcowych pustych
+  linii; bloki skleja się `"\n\n"`, całość kończy pojedynczym `"\n"`. Rdzeń to
+  `"\n\n".join([preambula, sekcja_korzenia, slowniki]) + "\n"`
+- **kolejność `sekcje_dostepne`**: kolejność z pliku (nie alfabetyczna) — jest
+  to kolejność pierwszego odwołania, więc modele powiązane leżą blisko siebie
+- **duplikaty w `sekcje=`**: deduplikowane, wynik w kolejności z pliku
+- **podanie nazwy korzenia albo `dictionaries` jako sekcji**: `BppError` z
+  komunikatem, że ta sekcja jest już w rdzeniu i wystarczy wywołać narzędzie
+  bez parametru `sekcje` (jawna nauka dla modelu zamiast cichego duplikatu)
+
+### Ograniczenia narzucone przez istniejące testy
+
+Zweryfikowane czytaniem `tests/test_djangoql_schema.py` — złamanie
+któregokolwiek wywali test, który dziś przechodzi:
+
+- **rdzeń musi zaczynać się dosłownie od preambuły** (`# BPP …`), bo
+  `test_djangoql_schema_trzy_korzenie_dostepne` robi `schemat.startswith("# BPP")`.
+  Informacja „to jest rdzeń, dobierz sekcje" NIE może być doklejona na początek
+  tekstu schematu — idzie osobnym polem zwrotu i do docstringa
+- **do `PROMPT_ZLOZ_ZAPYTANIE` nie wolno dopisać nawiasów klamrowych** — stała
+  przechodzi przez `str.format(opis=…)` z jedynym placeholderem `{opis}`, więc
+  każde `{` lub `}` w dopisanym tekście wysadzi wywołanie. Zapis
+  `sekcje=["bpp.zrodlo"]` jest bezpieczny
+- **`_JAK_ZLOZYC` musi nadal zawierać podłańcuchy** `operator`, `dictionaries`,
+  `zapytanie_rekord`; **`PROMPT_ZLOZ_ZAPYTANIE`** — `djangoql_schema`,
+  `operator`, `dictionaries`, `wklej`
 
 ## Obsługa błędów
 
