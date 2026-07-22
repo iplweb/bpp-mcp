@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Wywoływalny z `release.yml` — wydanie przepuszcza dokładnie tę samą matrycę,
+  # zamiast utrzymywać jej kopię.
+  workflow_call:
 
 # Minimalne uprawnienia GITHUB_TOKEN — workflow tylko czyta kod.
 permissions:
