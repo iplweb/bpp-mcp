@@ -108,6 +108,110 @@ def test_login_zly_state_odrzucony():
         )
 
 
+def _przechwyc_url():
+    """open_browser, które NIE otwiera nic (udaje host bez przeglądarki),
+    tylko zapamiętuje URL — żeby test mógł zbudować z niego wklejkę."""
+    zapisany: dict[str, str] = {}
+
+    def _open(url: str) -> bool:
+        zapisany["url"] = url
+        return False
+
+    return _open, zapisany
+
+
+def _wklejka(zapisany, *, code="WKLEJONY", state=None, samo_code=False):
+    """Callable udające użytkownika wklejającego adres z paska przeglądarki."""
+
+    def _czytaj() -> str:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(zapisany["url"]).query)
+        if samo_code:
+            return f"  {code}\n"
+        st = state if state is not None else q["state"][0]
+        return f"{q['redirect_uri'][0]}?code={code}&state={st}\n"
+
+    return _czytaj
+
+
+def _stub_serwera():
+    """Wspólne mocki: DCR, token, whoami + przepuszczenie loopbacku."""
+    _meta()
+    respx.post(f"{BASE}/o/register/").mock(
+        return_value=httpx.Response(201, json={"client_id": "CID"})
+    )
+    route = respx.post(f"{BASE}/o/token/").mock(
+        return_value=httpx.Response(
+            200, json={"access_token": "AT", "expires_in": 1800}
+        )
+    )
+    respx.get(f"{BASE}/api/v1/whoami/").mock(
+        return_value=httpx.Response(200, json={"username": "x"})
+    )
+    respx.route(host="127.0.0.1").pass_through()
+    return route
+
+
+@respx.mock
+def test_login_wypisuje_url_autoryzacji_tekstem():
+    """Na hoście zdalnym/bez GUI przeglądarka może się nie otworzyć — adres
+    musi być też wypisany, żeby dało się go otworzyć ręcznie."""
+    _stub_serwera()
+    komunikaty: list[str] = []
+    oauth_client.login(
+        BASE, open_browser=_fake_browser(), timeout=10.0, echo=komunikaty.append
+    )
+    wypisane = "\n".join(komunikaty)
+    assert f"{BASE}/o/authorize/" in wypisane
+    assert "code_challenge" in wypisane  # pełny URL, nie sam prefiks
+
+
+@respx.mock
+def test_login_przyjmuje_wklejony_url_callbacku():
+    """Ścieżka zdalna: przeglądarka działa na innej maszynie niż bpp-mcp, więc
+    callback na 127.0.0.1 nigdy nie wraca. Użytkownik wkleja adres z paska."""
+    token_route = _stub_serwera()
+    _open, zapisany = _przechwyc_url()
+    ts = oauth_client.login(
+        BASE,
+        open_browser=_open,
+        czytaj_wklejone=_wklejka(zapisany),
+        timeout=10.0,
+    )
+    assert ts.access_token == "AT"
+    body = dict(urllib.parse.parse_qsl(token_route.calls.last.request.content.decode()))
+    assert body["code"] == "WKLEJONY"
+
+
+@respx.mock
+def test_login_przyjmuje_sam_wklejony_kod():
+    """Część przeglądarek pokazuje tylko kod (albo user kopiuje sam parametr)."""
+    token_route = _stub_serwera()
+    _open, zapisany = _przechwyc_url()
+    oauth_client.login(
+        BASE,
+        open_browser=_open,
+        czytaj_wklejone=_wklejka(zapisany, code="GOLY", samo_code=True),
+        timeout=10.0,
+    )
+    body = dict(urllib.parse.parse_qsl(token_route.calls.last.request.content.decode()))
+    assert body["code"] == "GOLY"
+
+
+@respx.mock
+def test_login_wklejony_url_ze_zlym_state_odrzucony():
+    """Wklejka nie może być furtką omijającą kontrolę state — gdy state jest
+    obecny, MUSI się zgadzać."""
+    _stub_serwera()
+    _open, zapisany = _przechwyc_url()
+    with pytest.raises(ValueError):
+        oauth_client.login(
+            BASE,
+            open_browser=_open,
+            czytaj_wklejone=_wklejka(zapisany, state="PODMIENIONY"),
+            timeout=10.0,
+        )
+
+
 @respx.mock
 def test_login_timeout_bez_callbacku():
     _meta()

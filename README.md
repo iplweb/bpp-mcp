@@ -86,6 +86,14 @@ i ekran zgody (scope `read`). Po zalogowaniu token trafia do lokalnego pliku
 `~/.config/bpp-mcp/<instancja>/tokens.json` (uprawnienia `0600`), a `bpp-mcp`
 uruchamiany przez Claude forwarduje go do `/api/v1/` — bez dodatkowych kroków.
 
+**Praca zdalna / host bez GUI.** Adres autoryzacji jest zawsze wypisywany też
+tekstem, więc można go otworzyć w przeglądarce na innej maszynie. Callback na
+`127.0.0.1` wtedy nie wróci (przeglądarka jest gdzie indziej) — po zalogowaniu
+skopiuj z paska adresu cały adres przekierowania (zaczyna się od
+`http://127.0.0.1:`) albo sam parametr `code` i wklej w terminalu, gdzie czeka
+`bpp-mcp login`. Obie drogi — loopback i wklejka — działają równolegle; liczy
+się ta, która dojdzie pierwsza.
+
 Co odblokowuje:
 
 - **bogatsze wyniki** istniejących narzędzi (rekordy widoczne dla Twojego konta),
@@ -97,6 +105,18 @@ Wylogowanie (usuwa token tej instancji):
 ```bash
 uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp logout
 ```
+
+**Gdy instancja nie wystawia `/.well-known/`.** Logowanie zaczyna się od
+odczytu metadanych serwera autoryzacji (RFC 8414) spod
+`/.well-known/oauth-authorization-server`. Część wdrożeń blokuje na brzegu cały
+`/.well-known/` (typowo regułą nginksa na pliki ukryte, `location ~ /\.`) i
+oddaje `403`, mimo że serwer autoryzacji działa. `bpp-mcp` cofa się wtedy na
+konwencjonalne ścieżki django-oauth-toolkit (`/o/authorize/`, `/o/token/`,
+`/o/register/`) na tym samym hoście i loguje normalnie. Prawidłowo wystawione
+metadane zawsze mają pierwszeństwo. Właściwą naprawą po stronie serwera jest
+`location ^~ /.well-known/` przed regułą na pliki ukryte — bez tego natywny
+przycisk „authorize" w trybie HTTP nadal nie zadziała (tam discovery robi sam
+klient Claude, nie `bpp-mcp`).
 
 Token jest krótkotrwały (access ~30 min) i odświeżany po cichu (refresh ~7 dni,
 rotujący). Zmiana hasła lub dezaktywacja konta w BPP unieważnia go — wtedy
