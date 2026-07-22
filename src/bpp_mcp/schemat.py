@@ -31,8 +31,12 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-# Nagłówek sekcji modelu: ``app_label.model_name:`` w kolumnie 0.
-_RE_NAGLOWEK = re.compile(r"^[a-z_]+\.[a-z_]+:$")
+# Nagłówek sekcji modelu: ``app_label.model_name:`` w kolumnie 0. Cyfry są
+# dozwolone poza pierwszym znakiem — Django buduje tę nazwę z ``str(_meta)``,
+# a w BPP realnie istnieją aplikacje ``ewaluacja2021`` i ``integrator2`` z
+# własnymi modelami. Wzorzec bez cyfr wchłaniałby taką sekcję do poprzedniej
+# CICHO: nie byłoby jej ani w ``sekcje_dostepne``, ani do dobrania po nazwie.
+_RE_NAGLOWEK = re.compile(r"^[a-z_][a-z0-9_]*\.[a-z0-9_]+:$")
 
 # Linia wskazująca model-korzeń. Nazwy nie hardkodujemy — bierzemy ją z pliku.
 _RE_START_MODEL = re.compile(r"^start model:\s*(\S+)\s*$", re.MULTILINE)
@@ -100,6 +104,13 @@ def podziel(tekst: str) -> Schemat:
         if indeks_slownikow is not None
         else ""
     )
+
+    if indeks_slownikow is None:
+        raise ValueError(
+            "Schemat bez bloku `dictionaries` — format pliku schematu "
+            "DjangoQL zmienił się albo plik jest uszkodzony. Rdzeń bez "
+            "dozwolonych wartości słownikowych kazałby modelowi je zgadywać."
+        )
 
     dopasowanie = _RE_START_MODEL.search(preambula)
     if dopasowanie is None:

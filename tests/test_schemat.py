@@ -63,6 +63,38 @@ dictionaries (shared relation values, referenced above):
     nazwa: "polski"
 """
 
+BEZ_SLOWNIKOW = """\
+# BPP 202607.1
+
+start model: bpp.rekord
+
+bpp.rekord:
+  tytul        str
+"""
+
+# Nazwa sekcji z cyfrą w ``app_label``. Django buduje ją z ``str(_meta)``, a w
+# głównym BPP istnieją aplikacje ``ewaluacja2021`` i ``integrator2`` z własnymi
+# modelami — gdyby relacja z allow-listy kiedyś do nich doszła, wzorzec bez
+# cyfr wchłonąłby taką sekcję do poprzedniej CICHO.
+Z_CYFRA_W_NAZWIE = """\
+# BPP 202607.1
+
+start model: bpp.rekord
+
+bpp.rekord:
+  ewa          -> ewaluacja2021.cos
+
+ewaluacja2021.cos:
+  pole         str
+
+integrator2.zrodlo:
+  nazwa        str
+
+dictionaries (shared relation values, referenced above):
+  bpp.jezyk
+    nazwa: "polski"
+"""
+
 PLIKI_ZBUNDLOWANE = (
     "rekord_djangoql_schema.compact.txt",
     "autor_djangoql_schema.compact.txt",
@@ -260,3 +292,34 @@ def test_kontrakt_formatu_zbundlowanych_plikow(nazwa_pliku):
     rdzen = sch.rdzen(s)
     assert rdzen.startswith("# BPP"), nazwa_pliku
     assert len(rdzen) < 0.4 * len(tekst), nazwa_pliku
+
+
+# --- regresje z adwersarialnej recenzji PR #7 -----------------------------
+
+
+def test_podziel_naglowek_z_cyfra_w_app_label():
+    # Sekcja ``ewaluacja2021.cos`` MUSI być osobną sekcją, nie doklejką do
+    # poprzedniej: inaczej nie ma jej w ``sekcje_dostepne`` i nie da się jej
+    # dobrać po nazwie, mimo że model widzi ją w polach korzenia.
+    s = sch.podziel(Z_CYFRA_W_NAZWIE)
+    assert "ewaluacja2021.cos" in s.sekcje
+    assert "integrator2.zrodlo" in s.sekcje
+    # W bloku korzenia zostaje sama linia relacji (``ewa -> ewaluacja2021.cos``),
+    # ale NIE nagłówek wchłoniętej sekcji.
+    assert "ewaluacja2021.cos:" not in s.sekcje["bpp.rekord"]
+    assert "pole" not in s.sekcje["bpp.rekord"]
+
+
+def test_podziel_naglowek_z_cyfra_da_sie_dobrac():
+    s = sch.podziel(Z_CYFRA_W_NAZWIE)
+    wynik = sch.wytnij(s, ["ewaluacja2021.cos"])
+    assert wynik.startswith("ewaluacja2021.cos:")
+    assert "pole" in wynik
+
+
+def test_podziel_bez_slownikow_wyjatek():
+    # Cichy rdzeń bez sekcji ``dictionaries`` kazałby modelowi zgadywać
+    # dozwolone wartości słownikowe — musi być głośna awaria.
+    with pytest.raises(ValueError) as exc:
+        sch.podziel(BEZ_SLOWNIKOW)
+    assert "dictionaries" in str(exc.value)
