@@ -206,7 +206,10 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         params = urllib.parse.parse_qs(parsed.query)
-        self.server.wynik.put(params)  # type: ignore[attr-defined]
+        # Drugi element krotki to „czy to ręczna wklejka" — z loopbacku ZAWSZE
+        # False. Znacznik jedzie obok parametrów, nigdy w nich, bo query string
+        # pochodzi z sieci i użytkownik go nie kontroluje.
+        self.server.wynik.put((params, False))  # type: ignore[attr-defined]
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -240,20 +243,22 @@ def _czytaj_stdin() -> str | None:
     return None
 
 
-def _parsuj_wklejone(tekst: str) -> dict[str, list[str]]:
-    """Zamień wklejkę użytkownika na parametry callbacku.
+def _parsuj_wklejone(tekst: str) -> tuple[dict[str, list[str]], bool]:
+    """Zamień wklejkę użytkownika na ``(parametry, czy_goly_kod)``.
 
     Przyjmuje pełny adres przekierowania (``http://127.0.0.1:…?code=…&state=…``)
-    albo sam kod. Sam kod oznaczamy ``_recznie``, bo nie niesie ``state`` —
-    a rozluźnienie kontroli ``state`` musi dotyczyć WYŁĄCZNIE świadomej wklejki,
-    nigdy żądania przyjętego na loopbacku.
+    albo sam kod. Flaga wraca OSOBNO, a nie jako klucz w parametrach: parametry
+    bywają budowane z danych sieciowych (callback na loopbacku), więc wszystko,
+    co w nich siedzi, trzeba traktować jak wejście kontrolowane przez atakującego.
+    Znacznik trzymany w tym samym słowniku dałby się podszyć żądaniem
+    ``?code=…&_recznie=1`` i ominąć kontrolę ``state``.
     """
     tekst = tekst.strip()
     if not tekst:
-        return {}
+        return {}, False
     if "?" in tekst:
-        return urllib.parse.parse_qs(urllib.parse.urlparse(tekst).query)
-    return {"code": [tekst], "_recznie": ["1"]}
+        return urllib.parse.parse_qs(urllib.parse.urlparse(tekst).query), False
+    return {"code": [tekst]}, True
 
 
 def _start_czytnik(kolejka: queue.Queue, czytaj) -> None:
@@ -267,9 +272,9 @@ def _start_czytnik(kolejka: queue.Queue, czytaj) -> None:
             return
         if not tekst:
             return
-        params = _parsuj_wklejone(tekst)
+        params, goly_kod = _parsuj_wklejone(tekst)
         if params.get("code") or params.get("error"):
-            kolejka.put(params)
+            kolejka.put((params, goly_kod))
 
     threading.Thread(target=_pracuj, daemon=True).start()
 
@@ -328,18 +333,18 @@ def login(
         open_browser(authorize_url)
         _start_czytnik(server.wynik, czytaj_wklejone or _czytaj_stdin)  # type: ignore[attr-defined]
         try:
-            params = server.wynik.get(timeout=timeout)  # type: ignore[attr-defined]
+            params, goly_kod = server.wynik.get(timeout=timeout)  # type: ignore[attr-defined]
         except queue.Empty as exc:
             raise TimeoutError(
                 "Nie odebrano odpowiedzi logowania w wyznaczonym czasie."
             ) from exc
         otrzymany_state = (params.get("state") or [None])[0]
-        # Brak state wybaczamy TYLKO przy ręcznie wklejonym samym kodzie —
-        # tam użytkownik świadomie przenosi wartość i nie ma czego porównywać.
-        # Na loopbacku brak/niezgodność state dalej jest twardym odrzuceniem.
-        if otrzymany_state != state and not (
-            params.get("_recznie") and otrzymany_state is None
-        ):
+        # Brak state wybaczamy TYLKO gdy użytkownik wkleił na stdin sam kod —
+        # tam nie ma czego porównywać, a źródłem jest człowiek przy terminalu,
+        # nie sieć. ``goly_kod`` przyjeżdża osobno od parametrów właśnie po to,
+        # by żądanie na loopback nie mogło go sfabrykować. Na loopbacku
+        # brak/niezgodność state pozostaje twardym odrzuceniem.
+        if otrzymany_state != state and not (goly_kod and otrzymany_state is None):
             raise ValueError("Niezgodny parametr state — logowanie odrzucone.")
         code = (params.get("code") or [None])[0]
         if not code:

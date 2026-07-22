@@ -213,6 +213,31 @@ def test_login_wklejony_url_ze_zlym_state_odrzucony():
 
 
 @respx.mock
+def test_login_loopback_nie_moze_podszyc_sie_pod_reczna_wklejke():
+    """Znacznik ręcznej wklejki NIE może pochodzić z sieci.
+
+    Gdyby znacznik był czytany z parametrów callbacku, dowolne żądanie na
+    loopback z ``?code=…&_recznie=1`` (bez ``state``) omijałoby kontrolę CSRF —
+    a port loopbacku da się przeskanować ze złośliwej strony w przeglądarce.
+    Rozluźnienie ``state`` ma dotyczyć wyłącznie tekstu wklejonego na stdin.
+    """
+    _stub_serwera()
+
+    def _open(url: str) -> bool:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        redirect = q["redirect_uri"][0]
+
+        def _hit():
+            httpx.get(f"{redirect}?code=PODSZYTY&_recznie=1")
+
+        threading.Thread(target=_hit, daemon=True).start()
+        return True
+
+    with pytest.raises(ValueError):
+        oauth_client.login(BASE, open_browser=_open, timeout=10.0)
+
+
+@respx.mock
 def test_login_timeout_bez_callbacku():
     _meta()
     respx.post(f"{BASE}/o/register/").mock(
