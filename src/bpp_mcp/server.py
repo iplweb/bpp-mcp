@@ -18,7 +18,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from . import oauth_client, token_store, tools
 from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
 from .client import BppClient
-from .config import Config
+from .config import BrakKonfiguracji, Config
 from .login_state import TokenProvider
 
 
@@ -314,7 +314,14 @@ def build_mcp(config: Config) -> FastMCP:
 
 # Modułowy serwer — ZAWSZE stdio (D2: niezależny od env BPP_MCP_TRANSPORT),
 # używany przez stdio-entry i istniejące testy importujące ``mcp``.
-mcp = build_mcp(replace(Config.from_env(), transport="stdio"))
+#
+# Bez BPP_BASE_URL nie da się go zbudować, ale import NIE może przez to
+# wybuchnąć tracebackiem — ``main()`` ma najpierw wypisać czytelny komunikat
+# (a ``--help`` zadziałać w ogóle bez konfiguracji).
+try:
+    mcp = build_mcp(replace(Config.from_env(), transport="stdio"))
+except BrakKonfiguracji:
+    mcp = None  # type: ignore[assignment]
 
 
 def _cmd_login(config: Config) -> None:
@@ -346,7 +353,11 @@ def main() -> None:
     sub.add_parser("login", help="Zaloguj się do BPP (przeglądarka) i zapisz token.")
     sub.add_parser("logout", help="Usuń zapisany token tej instancji BPP.")
     args = parser.parse_args()
-    config = Config.from_env()
+    try:
+        config = Config.from_env()
+    except BrakKonfiguracji as exc:
+        print(f"bpp-mcp: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
 
     if args.cmd == "login":
         _cmd_login(config)

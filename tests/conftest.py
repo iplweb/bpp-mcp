@@ -3,12 +3,21 @@ przechwytuje ruch httpx — żadnych żywych wywołań)."""
 
 from __future__ import annotations
 
-import pytest
-
-from bpp_mcp.client import BppClient
-from bpp_mcp.config import Config
+import os
 
 BASE_URL = "https://bpp.test"
+
+# BPP_BASE_URL jest wymagany i nie ma wartości domyślnej, a ``bpp_mcp.server``
+# buduje serwer już przy imporcie — więc host trzeba ustawić ZANIM pytest
+# zaimportuje moduły testowe (fixtury są na to za późno). Ustawiamy na sztywno,
+# nie ``setdefault``, żeby zmienna z powłoki dewelopera nie zmieniała wyników.
+os.environ["BPP_BASE_URL"] = BASE_URL
+
+import pytest  # noqa: E402
+
+from bpp_mcp.client import BppClient  # noqa: E402
+from bpp_mcp.config import Config  # noqa: E402
+
 API_ROOT = f"{BASE_URL}/api/v1"
 
 

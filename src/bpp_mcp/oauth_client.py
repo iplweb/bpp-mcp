@@ -12,6 +12,7 @@ import base64
 import hashlib
 import queue
 import secrets
+import sys
 import threading
 import time
 import urllib.parse
@@ -43,21 +44,52 @@ def _client_ctx(client: httpx.Client | None) -> tuple[httpx.Client, bool]:
     return httpx.Client(timeout=_TIMEOUT, follow_redirects=True), True
 
 
+def _konwencjonalne(base_url: str) -> Metadata:
+    """Ścieżki, pod którymi BPP montuje serwer autoryzacji (``oauth_mcp/urls.py``).
+
+    Używane jako fallback, gdy metadanych RFC 8414 nie da się odczytać.
+    """
+    base = base_url.rstrip("/")
+    return Metadata(
+        authorization_endpoint=f"{base}/o/authorize/",
+        token_endpoint=f"{base}/o/token/",
+        registration_endpoint=f"{base}/o/register/",
+    )
+
+
 def discover(base_url: str, *, client: httpx.Client | None = None) -> Metadata:
+    """Odczytaj metadane serwera autoryzacji (RFC 8414), z fallbackiem na ``/o/*``.
+
+    Discovery bywa nieosiągalne mimo w pełni sprawnego serwera autoryzacji —
+    typowo gdy brzegowy nginx blokuje cały ``/.well-known/`` regułą na pliki
+    ukryte (``location ~ /\\.``) i oddaje 403. Że endpointy istnieją, widać
+    dopiero po odpytaniu ``/o/authorize/``. Padanie w takim układzie znaczyłoby
+    „nie da się zalogować", choć logowanie jest w pełni możliwe — dlatego
+    wracamy na konwencjonalne ścieżki django-oauth-toolkit.
+
+    Fallback jest bezpieczny: nie zgaduje sekretów ani hosta (zostajemy na
+    ``base_url``), a gdy zgadnie źle, żądanie do ``/o/token/`` skończy się
+    czytelnym błędem. Prawidłowe metadane ZAWSZE mają pierwszeństwo — instancja
+    z serwerem autoryzacji pod innym adresem nie zostanie nadpisana.
+    """
     url = f"{base_url.rstrip('/')}/.well-known/oauth-authorization-server"
     cli, owns = _client_ctx(client)
     try:
         resp = cli.get(url)
         resp.raise_for_status()
         data = resp.json()
+        return Metadata(
+            authorization_endpoint=data["authorization_endpoint"],
+            token_endpoint=data["token_endpoint"],
+            registration_endpoint=data.get("registration_endpoint"),
+        )
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        # ValueError łapie też JSONDecodeError (HTML zamiast JSON), KeyError —
+        # metadane bez wymaganych pól, TypeError — JSON niebędący obiektem.
+        return _konwencjonalne(base_url)
     finally:
         if owns:
             cli.close()
-    return Metadata(
-        authorization_endpoint=data["authorization_endpoint"],
-        token_endpoint=data["token_endpoint"],
-        registration_endpoint=data.get("registration_endpoint"),
-    )
 
 
 def register_client(
@@ -174,7 +206,10 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         params = urllib.parse.parse_qs(parsed.query)
-        self.server.wynik.put(params)  # type: ignore[attr-defined]
+        # Drugi element krotki to „czy to ręczna wklejka" — z loopbacku ZAWSZE
+        # False. Znacznik jedzie obok parametrów, nigdy w nich, bo query string
+        # pochodzi z sieci i użytkownik go nie kontroluje.
+        self.server.wynik.put((params, False))  # type: ignore[attr-defined]
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -192,13 +227,82 @@ def _start_loopback() -> tuple[HTTPServer, int]:
     return server, port
 
 
+def _czytaj_stdin() -> str | None:
+    """Zwróć pierwszą niepustą linię ze stdin (albo ``None`` przy EOF/braku).
+
+    ``None`` przy EOF jest istotne: pod pytest/nie-interaktywnie stdin bywa
+    zamknięty i odczyt wraca natychmiast — wtedy czytnik ma po prostu zamilknąć
+    i zostawić decyzję pętli loopbacku, zamiast wrzucać pustkę do kolejki.
+    """
+    try:
+        for linia in sys.stdin:
+            if linia.strip():
+                return linia
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _parsuj_wklejone(tekst: str) -> tuple[dict[str, list[str]], bool]:
+    """Zamień wklejkę użytkownika na ``(parametry, czy_goly_kod)``.
+
+    Przyjmuje pełny adres przekierowania (``http://127.0.0.1:…?code=…&state=…``)
+    albo sam kod. Flaga wraca OSOBNO, a nie jako klucz w parametrach: parametry
+    bywają budowane z danych sieciowych (callback na loopbacku), więc wszystko,
+    co w nich siedzi, trzeba traktować jak wejście kontrolowane przez atakującego.
+    Znacznik trzymany w tym samym słowniku dałby się podszyć żądaniem
+    ``?code=…&_recznie=1`` i ominąć kontrolę ``state``.
+    """
+    tekst = tekst.strip()
+    if not tekst:
+        return {}, False
+    if "?" in tekst:
+        return urllib.parse.parse_qs(urllib.parse.urlparse(tekst).query), False
+    return {"code": [tekst]}, True
+
+
+def _start_czytnik(kolejka: queue.Queue, czytaj) -> None:
+    """Wątek-demon czekający na wklejkę; wrzuca wynik do tej samej kolejki,
+    w którą celuje loopback — kto pierwszy, ten wygrywa."""
+
+    def _pracuj() -> None:
+        try:
+            tekst = czytaj()
+        except Exception:  # czytnik jest opcjonalną wygodą — nie wywraca loginu
+            return
+        if not tekst:
+            return
+        params, goly_kod = _parsuj_wklejone(tekst)
+        if params.get("code") or params.get("error"):
+            kolejka.put((params, goly_kod))
+
+    threading.Thread(target=_pracuj, daemon=True).start()
+
+
+_INSTRUKCJA = (
+    "Jeśli przeglądarka otworzyła się na innej maszynie niż ta, callback na "
+    "127.0.0.1 tu nie wróci.\nPo zalogowaniu skopiuj wtedy z paska adresu CAŁY "
+    "adres przekierowania (zaczyna się od\nhttp://127.0.0.1:) albo sam parametr "
+    "code — wklej poniżej i naciśnij Enter."
+)
+
+
 def login(
     base_url: str,
     *,
     existing_client_id: str | None = None,
     timeout: float = 300.0,
     open_browser=webbrowser.open,
+    echo=print,
+    czytaj_wklejone=None,
 ) -> TokenSet:
+    """Przeprowadź logowanie OAuth 2.1 (loopback + PKCE) i zwróć zestaw tokenów.
+
+    Domykane dwiema drogami naraz: przeglądarka odbija się na lokalny loopback
+    (ścieżka automatyczna), a równolegle akceptowana jest wklejka użytkownika
+    (ścieżka ratunkowa, gdy przeglądarka biegnie na innej maszynie — praca
+    zdalna, SSH, serwer bez GUI). Wygrywa ta, która przyjdzie pierwsza.
+    """
     base_url = base_url.rstrip("/")
     meta = discover(base_url)
     server, port = _start_loopback()
@@ -218,14 +322,29 @@ def login(
                 "code_challenge_method": "S256",
             }
         )
-        open_browser(f"{meta.authorization_endpoint}?{query}")
+        authorize_url = f"{meta.authorization_endpoint}?{query}"
+        echo("")
+        echo("Otwórz w przeglądarce i zaloguj się do BPP:")
+        echo("")
+        echo(f"    {authorize_url}")
+        echo("")
+        echo(_INSTRUKCJA)
+        echo("")
+        open_browser(authorize_url)
+        _start_czytnik(server.wynik, czytaj_wklejone or _czytaj_stdin)  # type: ignore[attr-defined]
         try:
-            params = server.wynik.get(timeout=timeout)  # type: ignore[attr-defined]
+            params, goly_kod = server.wynik.get(timeout=timeout)  # type: ignore[attr-defined]
         except queue.Empty as exc:
             raise TimeoutError(
                 "Nie odebrano odpowiedzi logowania w wyznaczonym czasie."
             ) from exc
-        if (params.get("state") or [None])[0] != state:
+        otrzymany_state = (params.get("state") or [None])[0]
+        # Brak state wybaczamy TYLKO gdy użytkownik wkleił na stdin sam kod —
+        # tam nie ma czego porównywać, a źródłem jest człowiek przy terminalu,
+        # nie sieć. ``goly_kod`` przyjeżdża osobno od parametrów właśnie po to,
+        # by żądanie na loopback nie mogło go sfabrykować. Na loopbacku
+        # brak/niezgodność state pozostaje twardym odrzuceniem.
+        if otrzymany_state != state and not (goly_kod and otrzymany_state is None):
             raise ValueError("Niezgodny parametr state — logowanie odrzucone.")
         code = (params.get("code") or [None])[0]
         if not code:
