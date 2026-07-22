@@ -1,5 +1,7 @@
 # bpp-mcp
 
+[![PyPI](https://img.shields.io/pypi/v/bpp-mcp.svg)](https://pypi.org/project/bpp-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/bpp-mcp.svg)](https://pypi.org/project/bpp-mcp/)
 [![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
 
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP** (Bibliografia
@@ -34,19 +36,38 @@ wdrożenia BPP przez zmienne środowiskowe:
 
 ## Instalacja i uruchomienie
 
-Najprościej, bezpośrednio z gita przez [uv](https://docs.astral.sh/uv/):
+Pakiet jest na [PyPI](https://pypi.org/project/bpp-mcp/). Najprościej — bez
+instalowania czegokolwiek na stałe, przez [uv](https://docs.astral.sh/uv/):
+
+```bash
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp
+```
+
+`uvx` pobiera pakiet do własnego cache'a i uruchamia go w odizolowanym
+środowisku — nic nie ląduje w Twoim systemowym Pythonie.
+
+Jeśli wolisz mieć komendę `bpp-mcp` na stałe w `PATH`:
+
+```bash
+uv tool install bpp-mcp        # albo: pip install bpp-mcp
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl bpp-mcp
+```
+
+Aktualizacja: `uv tool upgrade bpp-mcp` (przy `uvx` wystarczy `uvx bpp-mcp@latest`).
+
+<details>
+<summary>Wersja rozwojowa prosto z gita (niewydany kod)</summary>
 
 ```bash
 BPP_BASE_URL=https://bpp.twoja-uczelnia.pl \
   uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp
 ```
 
-Albo instalacja pip z gita:
+Bierze czubek gałęzi `main`, więc dostajesz zmiany jeszcze przed wydaniem —
+ale też przed ich przetestowaniem w praktyce. Do normalnego użycia weź wersję
+z PyPI.
 
-```bash
-pip install "git+https://github.com/iplweb/bpp-mcp"
-BPP_BASE_URL=https://bpp.twoja-uczelnia.pl bpp-mcp
-```
+</details>
 
 `BPP_BASE_URL` jest **wymagany i nie ma wartości domyślnej** — bez niego serwer
 nie wystartuje, tylko wypisze, czego brakuje. To celowe: każde wdrożenie BPP to
@@ -62,7 +83,7 @@ Domyślnie `bpp-mcp` działa po **stdio** i anonimowo (dane publiczne). Aby dzia
 **z uprawnieniami zalogowanego użytkownika BPP** (OAuth 2.1):
 
 ```bash
-BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uv run bpp-mcp --http --port 8000
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp --http --port 8000
 ```
 
 Klient MCP (Claude) sam przeprowadza logowanie: wykrywa serwer autoryzacji BPP
@@ -84,8 +105,7 @@ Domyślny tryb stdio może działać **z uprawnieniami zalogowanego użytkownika
 bez uruchamiania serwera HTTP. Zaloguj się **raz**:
 
 ```bash
-BPP_BASE_URL=https://bpp.twoja-uczelnia.pl \
-  uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp login
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp login
 ```
 
 Otworzy się przeglądarka na logowanie BPP (hasło/LDAP/Microsoft/ORCID/Keycloak)
@@ -110,8 +130,7 @@ Co odblokowuje:
 Wylogowanie (usuwa token tej instancji):
 
 ```bash
-BPP_BASE_URL=https://bpp.twoja-uczelnia.pl \
-  uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp logout
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp logout
 ```
 
 **Gdy instancja nie wystawia `/.well-known/`.** Logowanie zaczyna się od
@@ -147,7 +166,7 @@ Dodaj wpis w pliku konfiguracyjnym Claude Desktop
   "mcpServers": {
     "bpp": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"],
+      "args": ["bpp-mcp"],
       "env": {
         "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl"
       }
@@ -156,12 +175,16 @@ Dodaj wpis w pliku konfiguracyjnym Claude Desktop
 }
 ```
 
+Jeśli `uvx` nie jest w `PATH` Claude Desktop (typowe na macOS — aplikacja nie
+dziedziczy `PATH` z powłoki), podaj pełną ścieżkę, np. `~/.local/bin/uvx`;
+pokaże ją `which uvx`.
+
 ## Podłączenie do Claude Code
 
 ```bash
 claude mcp add bpp \
   --env BPP_BASE_URL=https://bpp.twoja-uczelnia.pl \
-  -- uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp
+  -- uvx bpp-mcp
 ```
 
 ## Narzędzia
@@ -282,6 +305,25 @@ uv run pytest -q
 
 Testy są w pełni offline (mock httpx przez [respx](https://lundberg.github.io/respx/));
 domyślne CI nie wykonuje żadnych żywych wywołań.
+
+### Wydanie na PyPI
+
+Publikacja idzie przez [trusted publishing](https://docs.pypi.org/trusted-publishers/)
+(OIDC) — w repozytorium nie ma i nie może być tokenu API PyPI. Wydanie wyzwala
+push tagu:
+
+```bash
+# 1. podbij `version` w pyproject.toml, zacommituj
+# 2. otaguj i wypchnij
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+Workflow [`release.yml`](.github/workflows/release.yml) przepuszcza pełną
+matrycę testów, **sprawdza, czy tag zgadza się z `project.version`** (rozjazd =
+przerwane wydanie, bo numeru raz zajętego na PyPI nie da się odzyskać), buduje
+sdist + wheel, weryfikuje je `twine check --strict` i obecność zbundlowanych
+schematów DjangoQL, po czym publikuje z osobnego joba w środowisku `pypi`.
 
 ## Licencja
 
