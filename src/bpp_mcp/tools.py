@@ -11,6 +11,7 @@ import asyncio
 from importlib import resources
 from typing import Any
 
+from . import schemat
 from .catalog import (
     CATALOG,
     SLOWNIKI,
@@ -49,15 +50,20 @@ _SCHEMATY_DJANGOQL: dict[str, str] = {
 
 
 # Krótka wskazówka doklejana do zwrotu ``djangoql_schema`` — przypomina LLM-owi,
-# że schemat służy do ZŁOŻENIA zapytania (do wklejenia), a nie do wykonania.
+# że schemat służy do ZŁOŻENIA zapytania (do wklejenia), a nie do wykonania,
+# oraz że domyślnie dostał RDZEŃ, a sekcje modeli relacyjnych dobiera się osobno.
 _JAK_ZLOZYC = (
     "Użyj tych pól i sekcji `dictionaries` jako jedynego źródła prawdy: "
     "operator dobierz do typu pola (int/date: = != > >= < <= in; tekst bez "
     "słownika: ~ zawiera / = dokładnie; bool: = True/False; nullable: != None), "
-    "relacje trawersuj kropką, wartości słownikowe wpisuj dosłownie. Złóż JEDNO "
-    "zapytanie DjangoQL; wykonasz je narzędziem zapytanie_rekord (model rekord) "
-    "po zalogowaniu (Bearer/sesja + uprawnienia redaktora) — anon-API go nie "
-    "uruchamia."
+    "relacje trawersuj kropką, wartości słownikowe wpisuj dosłownie. Domyślnie "
+    "dostajesz RDZEŃ (reguły języka + pola modelu-korzenia + pełne słowniki); "
+    "jeśli trawersujesz do modelu relacyjnego (zapis `zrodlo -> bpp.zrodlo` w "
+    "polach korzenia), dobierz jego pola JEDNYM dodatkowym wywołaniem z "
+    'parametrem sekcje, np. sekcje=["bpp.zrodlo"] — nazwy są w polu '
+    "sekcje_dostepne. Złóż JEDNO zapytanie DjangoQL; wykonasz je narzędziem "
+    "zapytanie_rekord (model rekord) po zalogowaniu (Bearer/sesja + uprawnienia "
+    "redaktora) — anon-API go nie uruchamia."
 )
 
 
@@ -526,21 +532,39 @@ async def zapytanie_autorzy(
     return await _zapytanie(client, "zapytanie/autorzy/", q, limit, offset)
 
 
-async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
-    """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego korzenia: ``rekord``
-    (``bpp.Rekord``), ``autor`` (``bpp.Autor``) lub ``autorzy`` (``bpp.Autorzy``)
-    — po jednym na endpoint ``/api/v1/zapytanie/{rekord,autor,autorzy}/``.
+async def djangoql_schema(
+    model: str = "rekord", sekcje: list[str] | None = None
+) -> dict[str, Any]:
+    """Zwróć PORCJĘ zbundlowanego schematu DjangoQL-dla-LLM danego korzenia:
+    ``rekord`` (``bpp.Rekord``), ``autor`` (``bpp.Autor``) lub ``autorzy``
+    (``bpp.Autorzy``) — po jednym na endpoint
+    ``/api/v1/zapytanie/{rekord,autor,autorzy}/``.
 
-    Zawartość zwracanego tekstu:
+    Bez parametru ``sekcje`` zwracany jest RDZEŃ, czyli:
 
     * reguły języka DjangoQL (operatory per typ, negacja, trawersowanie
       relacji, sufiksy ``__year``/``__count`` itd.) — z nagłówka pliku,
-    * listę pól modelu Rekord z typami i (dla relacji) polem dopasowania,
-    * sekcję ``dictionaries`` — dozwolone WARTOŚCI wyłącznie dla bezpiecznych
-      słowników zamkniętych (charaktery, dyscypliny, języki, licencje OA…);
-      ZERO danych osób/instytucji.
+    * pola modelu-korzenia z typami i (dla relacji) polem dopasowania,
+    * całą sekcję ``dictionaries`` — dozwolone WARTOŚCI wyłącznie dla
+      bezpiecznych słowników zamkniętych (charaktery, dyscypliny, języki,
+      licencje OA…); ZERO danych osób/instytucji.
 
-    Po co: pozwala zbudować PRECYZYJNE zapytanie DjangoQL (np.
+    Pól modeli relacyjnych (``bpp.zrodlo``, ``bpp.jednostka``,
+    ``pbn_api.publication``…) w rdzeniu NIE ma. Nazwy tych sekcji widać w
+    blokach relacji modelu-korzenia (zapis ``zrodlo -> bpp.zrodlo``) oraz w
+    zwracanym polu ``sekcje_dostepne``; dobiera się je parametrem ``sekcje``,
+    np. ``sekcje=["bpp.zrodlo", "bpp.jednostka"]``. Wynik zawiera wtedy
+    wyłącznie wskazane bloki (bez preambuły i bez słowników), sklejone w
+    kolejności z pliku — kolejność argumentów nie ma znaczenia.
+
+    Typowy przepływ: JEDNO wywołanie po rdzeń, a potem — o ile zapytanie
+    trawersuje relacje — JEDNO po komplet potrzebnych sekcji.
+
+    Po co porcjowanie: cały snapshot schematu ma ~74 kB i przebija sufit
+    wielkości pojedynczego wyniku narzędzia MCP, przez co klient odkłada go do
+    pliku zamiast oddać modelowi. Rdzeń to 20–25% tej objętości.
+
+    Po co schemat: pozwala zbudować PRECYZYJNE zapytanie DjangoQL (np.
     ``rok >= 2020 and jezyk.nazwa = "angielski" and impact_factor > 0``)
     zamiast zgadywać nazwy pól i dozwolone wartości.
 
@@ -553,5 +577,28 @@ async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     if model not in _SCHEMATY_DJANGOQL:
         dostepne = ", ".join(_SCHEMATY_DJANGOQL)
         raise BppError(f"Nieznany model schematu '{model}'. Dostępne: {dostepne}.")
+
     tekst = _wczytaj_schemat_djangoql(model)
-    return {"model": model, "schemat": tekst, "jak_zlozyc": _JAK_ZLOZYC}
+    # Parser zgłasza zwykłe ``ValueError`` (dryf formatu, nieznane sekcje);
+    # na zewnątrz narzędzia idzie spójny ``BppError`` — z zachowaniem treści,
+    # bo komunikat o sekcjach niesie podpowiedzi difflib.
+    try:
+        rozlozony = schemat.podziel(tekst)
+        # ``wytnij`` podnosi ValueError na pustej liście, więc pustą listę
+        # (i brak parametru) obsługujemy tutaj jako „daj rdzeń".
+        if sekcje:
+            tresc = schemat.wytnij(rozlozony, sekcje)
+        else:
+            tresc = schemat.rdzen(rozlozony)
+    except ValueError as exc:
+        raise BppError(str(exc)) from exc
+
+    return {
+        "model": model,
+        "schemat": tresc,
+        # Zawsze w zwrocie: pozwala poprawić literówkę w nazwie sekcji bez
+        # dodatkowej rundy wywołań. Bez korzenia i bez ``dictionaries`` —
+        # jedno i drugie jest już w rdzeniu.
+        "sekcje_dostepne": [n for n in rozlozony.sekcje if n != rozlozony.korzen],
+        "jak_zlozyc": _JAK_ZLOZYC,
+    }
