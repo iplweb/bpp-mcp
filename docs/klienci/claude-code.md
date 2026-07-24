@@ -7,15 +7,16 @@ Claude Code (CLI) dodaje serwery stdio komendą `claude mcp add`.
 ## Dodanie serwera
 
 ```bash
-claude mcp add --transport stdio --env BPP_BASE_URL=https://bpp.umlub.pl bpp \
+claude mcp add bpp --transport stdio --env BPP_BASE_URL=https://bpp.umlub.pl \
   -- uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp
 ```
 
 !!! warning "Kolejność argumentów"
-    Nie umieszczaj nazwy serwera **tuż po** `--env` — `--env` zachłannie
-    pochłania pary `KEY=value` i potraktowałby nazwę jako kolejną zmienną. W
-    komendzie wyżej między `--env …` a nazwą stoi `--transport stdio`. Separator
-    `--` (przed komendą serwera) jest **obowiązkowy**.
+    Nazwa serwera (`bpp`) stoi **przed** flagą `--env`. `--env` jest zachłanne —
+    pochłania kolejne pary `KEY=value` aż do następnej flagi lub `--`; gdyby nazwa
+    stała **tuż po** wartości `--env`, zostałaby potraktowana jako kolejna zmienna
+    i komenda by się rozjechała. Separator `--` (przed komendą serwera) jest
+    **obowiązkowy** — oddziela flagi `claude` od komendy uruchamiającej serwer.
 
 ## Zakresy (scope)
 

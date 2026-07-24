@@ -73,9 +73,10 @@ stdio-vs-HTTP) trzymamy w `docs/_snippets/` i wciągamy przez
   `pymdownx.superfences`, `pymdownx.highlight`, `pymdownx.inlinehilite`,
   `pymdownx.snippets`, `pymdownx.tabbed` (`alternate_style: true` — zakładki OS
   / lokalizacje configu), `tables`, `attr_list`, `toc` (`permalink: true`).
-  - **`pymdownx.snippets`**: `base_path: [!relative $config_dir/_snippets]`
-    (rozwiązywane względem `mkdocs.yml`, nie CWD) + **`check_paths: true`**
-    (błąd, gdy snippet nie istnieje — inaczej brak snippetu jest cicho ignorowany).
+  - **`pymdownx.snippets`**: `base_path: [!relative $config_dir]` (rozwiązywane
+    względem katalogu `mkdocs.yml`, nie CWD; inkluzje podają pełną ścieżkę
+    `docs/_snippets/NAME.md`) + **`check_paths: true`** (błąd, gdy snippet nie
+    istnieje — inaczej brak snippetu jest cicho ignorowany).
 - `repo_url: https://github.com/iplweb/bpp-mcp`, `repo_name: iplweb/bpp-mcp`,
   `edit_uri: edit/main/docs/`.
 - `site_url: https://iplweb.github.io/bpp-mcp/`, `site_name: bpp-mcp`.
@@ -127,7 +128,11 @@ stdio-vs-HTTP) trzymamy w `docs/_snippets/` i wciągamy przez
 - **Pinowanie akcji:** `astral-sh/setup-uv` po SHA (ten sam co w `tests.yml`);
   oficjalne akcje GitHuba po tagu wersji, zgodnie z konwencją `tests.yml`
   (`actions/checkout@v4`): `upload-pages-artifact@v3` (musi być v3+ po migracji
-  artifact-v4), `deploy-pages@v4` (v4+), `configure-pages@v5`.
+  artifact-v4), `deploy-pages@v4` (v4+).
+- **`configure-pages@v5` świadomie POMINIĘTE.** Wymagałoby `pages: write` w jobie
+  `build`, co zniweczyłoby per-job minimalizację uprawnień (build ma tylko
+  `contents: read`). Źródło Pages jest już ustawione na „GitHub Actions", więc
+  deploy działa bez tego kroku.
 
 ## 6. `pyproject.toml`
 
@@ -167,7 +172,7 @@ env `BPP_BASE_URL=https://bpp.umlub.pl`.
 | Klient | Transport | Klucz / miejsce configu | Oficjalne docs |
 |---|---|---|---|
 | **Claude Desktop** | stdio | `mcpServers` w `claude_desktop_config.json` (macOS `~/Library/Application Support/Claude/`, Windows `%APPDATA%\Claude\`). **Brak oficjalnego buildu Linux** → kieruj na Claude Code. Menu Claude → Settings → Developer → Edit Config. Restart wymagany. | modelcontextprotocol.io/docs/develop/connect-local-servers ; support.claude.com/.../10949351 |
-| **Claude Code** | stdio | `claude mcp add --transport stdio --env BPP_BASE_URL=... bpp-mcp -- uvx ...`. **Gotcha:** nie dawać nazwy zaraz po `--env`; `--` obowiązkowe. Scopes: local/project(`.mcp.json`)/user. | code.claude.com/docs/en/mcp ; docs.claude.com/en/docs/claude-code/cli-reference |
+| **Claude Code** | stdio | `claude mcp add bpp --transport stdio --env BPP_BASE_URL=... -- uvx ...`. **Gotcha:** nazwa PRZED `--env` (wariadyczne — połknęłoby nazwę stojącą po wartości); `--` obowiązkowe. Scopes: local/project(`.mcp.json`)/user. | code.claude.com/docs/en/mcp ; docs.claude.com/en/docs/claude-code/cli-reference |
 | **ChatGPT** | **HTTP only** | **Nie obsługuje stdio.** Wymaga `bpp-mcp --http` pod **publicznym HTTPS URL** (host lub tunel: ngrok/Cloudflare/OpenAI Secure MCP Tunnel). Settings → Apps & Connectors → Advanced → **Developer mode** → Create → URL `https://host/mcp`. Plany: Plus/Pro (Free nie); Business/Enterprise/Edu admin-gated. „connectors"→„apps" od 2025-12-17. | help.openai.com/.../12584461 ; developers.openai.com/apps-sdk/deploy/connect-chatgpt ; developers.openai.com/api/docs/mcp |
 | **OpenCode** | stdio | Klucz `mcp` w `opencode.json` (global `~/.config/opencode/` lub projekt). `type:"local"`, **`command` = jedna tablica** (exe+args), env pod **`environment`** (nie `env`). | opencode.ai/docs/mcp-servers/ ; opencode.ai/docs/config/ |
 | **DeepSeek** | (przez klienta) | **Brak własnej apki MCP.** DeepSeek = modele + API zgodne z OpenAI/Anthropic. Użyj klienta 3rd-party (rekomendacja: **Cherry Studio**) z kluczem DeepSeek + dodaj bpp-mcp (stdio uvx działa bez zmian). | api-docs.deepseek.com ; github.com/deepseek-ai/awesome-deepseek-agent/blob/main/docs/cherry_studio.md |

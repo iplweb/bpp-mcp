@@ -18,7 +18,7 @@ przez samych autorów DeepSeeka.
    na stronie [Inne klienty → Cherry Studio](inne.md#cherry-studio). Ponieważ
    Cherry Studio uruchamia serwer **lokalnie**, działa domyślna komenda stdio:
 
---8<-- "docs/_snippets/uvx-cmd.md"
+    --8<-- "docs/_snippets/uvx-cmd.md"
 
 Po skonfigurowaniu każda rozmowa prowadzona modelem DeepSeek może korzystać z
 narzędzi `bpp-mcp`.
