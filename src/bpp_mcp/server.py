@@ -298,15 +298,24 @@ def _register(mcp: FastMCP) -> None:
     )(zloz_zapytanie_djangoql)
 
 
-def _auth_kwargs(config: Config) -> dict[str, Any]:
+def _auth_kwargs(
+    config: Config,
+    mode: oauth_client.AuthMode = oauth_client.AuthMode.PASSTHROUGH,
+) -> dict[str, Any]:
     """Argumenty auth do FastMCP: puste w stdio; w http token_verifier +
-    AuthSettings (RS) + host/port."""
+    AuthSettings (RS) + host/port. W PROXY issuer wskazuje na sam bpp-mcp
+    (klient pobierze od nas metadane AS), w PASS-THROUGH — na BPP."""
     if config.transport != "http":
         return {}
+    issuer = (
+        config.effective_issuer_url
+        if mode is oauth_client.AuthMode.PROXY
+        else config.base_url
+    )
     return {
         "token_verifier": WhoamiTokenVerifier(config.base_url),
         "auth": AuthSettings(
-            issuer_url=config.base_url,
+            issuer_url=issuer,
             resource_server_url=config.effective_resource_url,
             required_scopes=["read"],
         ),
@@ -315,9 +324,13 @@ def _auth_kwargs(config: Config) -> dict[str, Any]:
     }
 
 
-def build_mcp(config: Config) -> FastMCP:
+def build_mcp(
+    config: Config,
+    mode: oauth_client.AuthMode = oauth_client.AuthMode.PASSTHROUGH,
+) -> FastMCP:
     """Zbuduj serwer FastMCP. Lifespan zakłada BppClient związany z TYM config
-    (W2 — nie z env), więc verifier i klient używają tej samej instancji BPP."""
+    (W2 — nie z env), więc verifier i klient używają tej samej instancji BPP.
+    W trybie PROXY (HTTP) dokłada trasę ``/.well-known/oauth-authorization-server``."""
 
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[KontekstApp]:
@@ -330,9 +343,34 @@ def build_mcp(config: Config) -> FastMCP:
         finally:
             await client.aclose()
 
-    mcp = FastMCP("bpp-mcp", lifespan=lifespan, **_auth_kwargs(config))
+    mcp = FastMCP("bpp-mcp", lifespan=lifespan, **_auth_kwargs(config, mode))
     _register(mcp)
+    if config.transport == "http" and mode is oauth_client.AuthMode.PROXY:
+        _register_as_metadata_route(mcp, config)
     return mcp
+
+
+def _register_as_metadata_route(mcp: FastMCP, config: Config) -> None:
+    """PROXY: wystaw metadane serwera autoryzacji (RFC 8414) pod adresem
+    bpp-mcp, wskazując endpointy na ``BPP/o/*``. Dla instancji bez #21, gdzie
+    ``BPP/.well-known/`` oddaje 403.
+
+    Nagłówek ``Access-Control-Allow-Origin: *`` jak w PRM od SDK — bez niego
+    klient przeglądarkowy (zdalny connector) przeszedłby krok 1 discovery (PRM),
+    a padł na kroku 2 (metadane AS blokowane przez SOP). Dokument jest publiczny,
+    więc ``*`` jest tu poprawne. Discovery to proste GET-y (bez preflightu), więc
+    sam nagłówek na odpowiedzi wystarcza."""
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+
+    @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])
+    async def _as_metadata(_request: Request) -> JSONResponse:
+        return JSONResponse(
+            oauth_client.authorization_server_metadata(
+                config.base_url, config.effective_issuer_url
+            ),
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
 
 
 # Modułowy serwer — ZAWSZE stdio (D2: niezależny od env BPP_MCP_TRANSPORT),
@@ -397,11 +435,18 @@ def main() -> None:
             http_host=args.host or config.http_host,
             http_port=args.port or config.http_port,
         )
-    server = build_mcp(config) if config.transport == "http" else mcp
     if config.transport == "http":
-        server.run(transport="streamable-http")
+        mode = oauth_client.probe_instance(config.base_url)
+        gotowa = mode is oauth_client.AuthMode.PASSTHROUGH
+        print(
+            f"bpp-mcp: discovery OAuth = {mode.value} "
+            f"(instancja {'wystawia' if gotowa else 'NIE wystawia'} "
+            f".well-known — {'#21 wdrożony' if gotowa else 'proxy przez bpp-mcp'})",
+            file=sys.stderr,
+        )
+        build_mcp(config, mode).run(transport="streamable-http")
     else:
-        server.run()
+        mcp.run()
 
 
 if __name__ == "__main__":

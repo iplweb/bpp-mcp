@@ -32,6 +32,7 @@ class Config:
     http_host: str = "127.0.0.1"
     http_port: int = 8000
     resource_url: str | None = None
+    issuer_url: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -41,7 +42,8 @@ class Config:
         - ``BPP_BASIC_AUTH`` — opcjonalny ``user:pass`` (raporty slotów),
         - ``BPP_MCP_TRANSPORT`` — ``stdio`` (dom.) | ``http`` (OAuth),
         - ``BPP_MCP_HTTP_HOST`` / ``BPP_MCP_HTTP_PORT`` — bind serwera HTTP,
-        - ``BPP_MCP_RESOURCE_URL`` — nadpisanie pola ``resource`` w PRM.
+        - ``BPP_MCP_RESOURCE_URL`` — nadpisanie pola ``resource`` w PRM,
+        - ``BPP_MCP_ISSUER_URL`` — nadpisanie issuera dla trybu PROXY.
 
         ``BPP_BASE_URL`` nie ma wartości domyślnej celowo. Każde wdrożenie BPP
         to inna uczelnia i inna bibliografia, więc zaszyty host oznaczałby, że
@@ -62,6 +64,7 @@ class Config:
             http_host=os.environ.get("BPP_MCP_HTTP_HOST", "127.0.0.1"),
             http_port=int(os.environ.get("BPP_MCP_HTTP_PORT", "8000")),
             resource_url=os.environ.get("BPP_MCP_RESOURCE_URL") or None,
+            issuer_url=os.environ.get("BPP_MCP_ISSUER_URL") or None,
         )
 
     @property
@@ -74,6 +77,19 @@ class Config:
         """URL zasobu (pole ``resource`` w protected-resource-metadata).
         Domyślnie kanoniczny URI serwera streamable: host:port + ``/mcp``."""
         return self.resource_url or f"http://{self.http_host}:{self.http_port}/mcp"
+
+    @property
+    def effective_issuer_url(self) -> str:
+        """URL issuera dla trybu PROXY: pole ``issuer`` w metadanych AS musi
+        równać się adresowi, spod którego klient pobiera well-known bpp-mcp.
+        Domyślnie ``effective_resource_url`` bez sufiksu ``/mcp``; nadpisywalny
+        przez ``BPP_MCP_ISSUER_URL`` (wdrożenia za reverse-proxy). Issuer MUSI
+        być gołym originem (``scheme://host[:port]``) bez ścieżki — klient MCP
+        buduje URL discovery inaczej dla issuera ze ścieżką i nie trafiłby w
+        naszą trasę ``/.well-known/oauth-authorization-server``."""
+        if self.issuer_url:
+            return self.issuer_url
+        return self.effective_resource_url.rstrip("/").removesuffix("/mcp")
 
     @property
     def auth_tuple(self) -> tuple[str, str] | None:

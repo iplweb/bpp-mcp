@@ -13,6 +13,7 @@ wdrożenia BPP przez zmienne środowiskowe.
 | `BPP_MCP_HTTP_HOST` | `127.0.0.1` | bind serwera HTTP (tryb `http`) |
 | `BPP_MCP_HTTP_PORT` | `8000` | port serwera HTTP (tryb `http`) |
 | `BPP_MCP_RESOURCE_URL` | `http://<host>:<port>/mcp` | pole `resource` w protected-resource-metadata |
+| `BPP_MCP_ISSUER_URL` | *(z resource-url bez `/mcp`)* | issuer dla trybu proxy discovery (za reverse-proxy); patrz [Uwierzytelnianie](uwierzytelnianie.md) |
 
 !!! warning "`BPP_BASE_URL` jest wymagany"
     Bez niego serwer **nie wystartuje** — tylko wypisze, czego brakuje. To celowe:
