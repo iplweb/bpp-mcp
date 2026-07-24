@@ -5,8 +5,9 @@
 [![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
 [![docs](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml)
 
-Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP** (Bibliografia
-Publikacji Pracowników). Wystawia read-only, anonimowe API BPP (`/api/v1/`) jako
+Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP**
+([Bibliografia Publikacji Pracowników](https://bpp.iplweb.pl)). Wystawia
+read-only, anonimowe API BPP (`/api/v1/`) jako
 zestaw kuratorowanych, typowanych narzędzi dla Claude Desktop, Claude Code,
 ChatGPT i innych klientów MCP.
 
