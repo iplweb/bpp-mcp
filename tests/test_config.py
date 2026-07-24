@@ -65,3 +65,18 @@ def test_resource_url_override(monkeypatch):
     monkeypatch.setenv("BPP_MCP_RESOURCE_URL", "http://127.0.0.1:9000/mcp")
     cfg = Config.from_env()
     assert cfg.effective_resource_url == "http://127.0.0.1:9000/mcp"
+
+
+def test_effective_issuer_url_z_resource_bez_mcp():
+    c = Config(
+        base_url="https://bpp.test",
+        transport="http",
+        http_host="127.0.0.1",
+        http_port=8000,
+    )
+    assert c.effective_issuer_url == "http://127.0.0.1:8000"
+
+
+def test_effective_issuer_url_override():
+    c = Config(base_url="https://bpp.test", issuer_url="https://mcp.example")
+    assert c.effective_issuer_url == "https://mcp.example"
