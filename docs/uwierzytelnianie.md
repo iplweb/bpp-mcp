@@ -85,6 +85,23 @@ Ten tryb jest wymagany dla klientów przyjmujących **zdalne** serwery MCP przez
 (np. [ChatGPT](klienci/chatgpt.md)) — serwer musi być osiągalny pod publicznym
 adresem HTTPS.
 
+!!! tip "Autodetekcja discovery (`.well-known/`)"
+    Przy starcie `bpp-mcp` sprawdza, czy instancja BPP wystawia
+    `/.well-known/oauth-authorization-server`, i sam dobiera tryb — log startu
+    wypisuje który:
+
+    - **pass-through** — instancja wystawia poprawne metadane; klient idzie po
+      nie wprost do BPP (ścieżka standardowa),
+    - **proxy** — instancja oddaje 403 (brzeg blokuje `/.well-known/`, np.
+      niewdrożony jeszcze fix nginksa `location ^~ /.well-known/`); wtedy
+      `bpp-mcp` **sam** wystawia metadane serwera autoryzacji (`issuer` = własny
+      adres, endpointy → `BPP/o/*`), więc „authorize" działa i bez tej poprawki.
+
+    Dzięki temu przycisk działa podczas stopniowego wdrażania fixu — po jego
+    dojściu na daną instancję wystarczy zrestartować jej `bpp-mcp`, a ta
+    przeskoczy na pass-through. Za reverse-proxy `issuer` nadpiszesz przez
+    `BPP_MCP_ISSUER_URL`.
+
 !!! danger "Bezpieczeństwo"
     Trzymaj `--host 127.0.0.1` (domyślnie). Bind na inny host wyłącza wbudowaną
     ochronę DNS-rebinding SDK i eksponuje serwer poza maszynę. Token jest
