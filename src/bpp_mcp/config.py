@@ -10,14 +10,23 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-DEFAULT_BASE_URL = "https://bpp.umlub.pl"
+_BRAK_HOSTA = (
+    "Nie ustawiono BPP_BASE_URL — nie wiadomo, z którą instancją BPP rozmawiać.\n"
+    "Wskaż ją jawnie, np.:\n"
+    "    BPP_BASE_URL=https://bpp.twoja-uczelnia.pl bpp-mcp\n"
+    "W konfiguracji klienta MCP ustaw tę zmienną w sekcji `env`."
+)
+
+
+class BrakKonfiguracji(RuntimeError):
+    """Brakuje obowiązkowego ustawienia — serwer nie ma prawa zgadywać."""
 
 
 @dataclass(frozen=True)
 class Config:
     """Niezmienny zestaw ustawień połączenia z instancją BPP."""
 
-    base_url: str = DEFAULT_BASE_URL
+    base_url: str
     basic_auth: str | None = None
     transport: str = "stdio"
     http_host: str = "127.0.0.1"
@@ -28,13 +37,22 @@ class Config:
     def from_env(cls) -> Config:
         """Zbuduj konfigurację ze zmiennych środowiskowych.
 
-        - ``BPP_BASE_URL`` — bazowy URL instancji (domyślnie umlub),
+        - ``BPP_BASE_URL`` — bazowy URL instancji (WYMAGANY, bez domyślnego),
         - ``BPP_BASIC_AUTH`` — opcjonalny ``user:pass`` (raporty slotów),
         - ``BPP_MCP_TRANSPORT`` — ``stdio`` (dom.) | ``http`` (OAuth),
         - ``BPP_MCP_HTTP_HOST`` / ``BPP_MCP_HTTP_PORT`` — bind serwera HTTP,
         - ``BPP_MCP_RESOURCE_URL`` — nadpisanie pola ``resource`` w PRM.
+
+        ``BPP_BASE_URL`` nie ma wartości domyślnej celowo. Każde wdrożenie BPP
+        to inna uczelnia i inna bibliografia, więc zaszyty host oznaczałby, że
+        użytkownik bez tej zmiennej dostaje cudze dane wyglądające na własne —
+        błąd cichy i trudny do zauważenia. Lepiej nie wystartować.
+
+        :raises BrakKonfiguracji: gdy ``BPP_BASE_URL`` jest pusty lub nieustawiony.
         """
-        base = os.environ.get("BPP_BASE_URL", DEFAULT_BASE_URL)
+        base = (os.environ.get("BPP_BASE_URL") or "").strip()
+        if not base:
+            raise BrakKonfiguracji(_BRAK_HOSTA)
         auth = os.environ.get("BPP_BASIC_AUTH") or None
         transport = os.environ.get("BPP_MCP_TRANSPORT", "stdio").lower()
         return cls(

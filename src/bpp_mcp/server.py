@@ -18,7 +18,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from . import oauth_client, token_store, tools
 from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
 from .client import BppClient
-from .config import Config
+from .config import BrakKonfiguracji, Config
 from .login_state import TokenProvider
 
 
@@ -167,13 +167,29 @@ async def zapytanie_autorzy(
     return await tools.zapytanie_autorzy(await _client(ctx), q, limit, offset)
 
 
-async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
-    """Zwróć zbundlowany schemat DjangoQL-dla-LLM danego korzenia (``model``:
+async def djangoql_schema(
+    model: str = "rekord", sekcje: list[str] | None = None
+) -> dict[str, Any]:
+    """Zwróć porcję schematu DjangoQL-dla-LLM danego korzenia (``model``:
     ``rekord`` = bpp.Rekord, ``autor`` = bpp.Autor, ``autorzy`` = bpp.Autorzy —
-    po jednym na endpoint /api/v1/zapytanie/*): reguły języka DjangoQL +
-    pola/typy/operatory/relacje + dozwolone WARTOŚCI wyłącznie bezpiecznych
-    słowników (ZERO danych osób/instytucji). Służy do KONSTRUKCJI precyzyjnych
-    zapytań — wersja schematu jest w nagłówku (``# BPP <wersja>``).
+    po jednym na endpoint /api/v1/zapytanie/*). Służy do KONSTRUKCJI
+    precyzyjnych zapytań; wersja schematu jest w nagłówku (``# BPP <wersja>``).
+
+    BEZ parametru ``sekcje`` dostajesz RDZEŃ: reguły języka DjangoQL
+    (operatory per typ, negacja, trawersowanie relacji) + pola modelu-korzenia
+    z typami + CAŁĄ sekcję ``dictionaries`` z dozwolonymi wartościami
+    bezpiecznych słowników zamkniętych (ZERO danych osób/instytucji).
+
+    Pól modeli relacyjnych (bpp.zrodlo, bpp.jednostka, pbn_api.publication…) w
+    rdzeniu NIE ma — cały snapshot ma ~74 kB i przebija sufit wyniku narzędzia
+    MCP, rdzeń to 20–25% tej objętości. Nazwy sekcji widać w blokach relacji
+    modelu-korzenia (zapis ``zrodlo -> bpp.zrodlo``) oraz w polu zwrotu
+    ``sekcje_dostepne``. Dobierz je parametrem ``sekcje``, np.
+    ``sekcje=["bpp.zrodlo", "bpp.jednostka"]`` — wynik zawiera wtedy WYŁĄCZNIE
+    wskazane bloki (bez preambuły i słowników), sklejone w kolejności z pliku.
+
+    Typowy przepływ: jedno wywołanie po rdzeń, a gdy zapytanie trawersuje
+    relacje — jedno po komplet potrzebnych sekcji naraz.
 
     To narzędzie tylko BUDUJE zapytanie. Aby je WYKONAĆ, użyj narzędzi
     zapytanie_rekord / zapytanie_autor / zapytanie_autorzy — wymagają
@@ -181,7 +197,7 @@ async def djangoql_schema(model: str = "rekord") -> dict[str, Any]:
     zwracają 401/403."""
     # Zasób lokalny (dane pakietu) — brak I/O sieciowego, więc nie potrzebuje
     # BppClient z lifespan-contextu.
-    return await tools.djangoql_schema(model)
+    return await tools.djangoql_schema(model, sekcje)
 
 
 # Instrukcja-szablon dla promptu ``zloz_zapytanie_djangoql``. Trzymana jako
@@ -199,6 +215,13 @@ KROK 1 — POBIERZ SCHEMAT. Najpierw wywołaj narzędzie MCP
 `djangoql_schema("rekord")`. Jego wynik jest JEDYNYM źródłem prawdy o polach,
 typach, relacjach i dozwolonych wartościach słownikowych. Nie zgaduj nazw pól
 ani wartości — bierz je dosłownie ze schematu (sekcja `dictionaries`).
+
+To wywołanie zwraca RDZEŃ: reguły języka, pola modelu-korzenia i pełne
+słowniki. Pól modeli relacyjnych w rdzeniu NIE ma — jeśli zapytanie trawersuje
+relację (w polach korzenia zapis `zrodlo -> bpp.zrodlo`), dobierz jej pola
+DRUGIM wywołaniem z parametrem sekcje, np.
+`djangoql_schema("rekord", sekcje=["bpp.zrodlo"])`; podaj wszystkie potrzebne
+sekcje naraz, a ich nazwy weź z pola `sekcje_dostepne`.
 
 KROK 2 — REGUŁY KOMPOZYCJI:
 - Operator dobierz do TYPU pola:
@@ -314,7 +337,14 @@ def build_mcp(config: Config) -> FastMCP:
 
 # Modułowy serwer — ZAWSZE stdio (D2: niezależny od env BPP_MCP_TRANSPORT),
 # używany przez stdio-entry i istniejące testy importujące ``mcp``.
-mcp = build_mcp(replace(Config.from_env(), transport="stdio"))
+#
+# Bez BPP_BASE_URL nie da się go zbudować, ale import NIE może przez to
+# wybuchnąć tracebackiem — ``main()`` ma najpierw wypisać czytelny komunikat
+# (a ``--help`` zadziałać w ogóle bez konfiguracji).
+try:
+    mcp = build_mcp(replace(Config.from_env(), transport="stdio"))
+except BrakKonfiguracji:
+    mcp = None  # type: ignore[assignment]
 
 
 def _cmd_login(config: Config) -> None:
@@ -346,7 +376,11 @@ def main() -> None:
     sub.add_parser("login", help="Zaloguj się do BPP (przeglądarka) i zapisz token.")
     sub.add_parser("logout", help="Usuń zapisany token tej instancji BPP.")
     args = parser.parse_args()
-    config = Config.from_env()
+    try:
+        config = Config.from_env()
+    except BrakKonfiguracji as exc:
+        print(f"bpp-mcp: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
 
     if args.cmd == "login":
         _cmd_login(config)

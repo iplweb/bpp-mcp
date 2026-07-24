@@ -101,3 +101,95 @@ def test_zasob_danych_jest_spakowany():
     )
     assert zasob.is_file()
     assert zasob.read_text(encoding="utf-8").startswith("# BPP")
+
+
+# --- Porcjowanie: rdzeń domyślnie, sekcje na żądanie -----------------------
+
+
+def _caly_plik(nazwa: str) -> str:
+    return (
+        resources.files("bpp_mcp").joinpath("data", nazwa).read_text(encoding="utf-8")
+    )
+
+
+async def test_djangoql_schema_domyslnie_zwraca_rdzen():
+    schemat = (await tools.djangoql_schema())["schemat"]
+    # Rdzeń = preambuła + sekcja modelu-korzenia + słowniki…
+    assert schemat.startswith("# BPP")
+    assert "start model: bpp.rekord" in schemat
+    assert "\nbpp.rekord:\n" in schemat
+    assert "dictionaries" in schemat
+    # …i NIC ponadto: sekcje modeli relacyjnych zostają poza rdzeniem.
+    assert "\nbpp.zrodlo:\n" not in schemat
+    assert "\nbpp.jednostka:\n" not in schemat
+
+
+async def test_djangoql_schema_rdzen_duzo_mniejszy_od_pliku():
+    for model, nazwa_pliku in (
+        ("rekord", "rekord_djangoql_schema.compact.txt"),
+        ("autor", "autor_djangoql_schema.compact.txt"),
+        ("autorzy", "autorzy_djangoql_schema.compact.txt"),
+    ):
+        rdzen = (await tools.djangoql_schema(model))["schemat"]
+        caly = _caly_plik(nazwa_pliku)
+        assert rdzen.strip(), model
+        # Powód całej tej roboty: cały plik przebijał sufit wyniku MCP.
+        assert len(rdzen) < 0.4 * len(caly), model
+
+
+async def test_djangoql_schema_jedna_sekcja_bez_rdzenia():
+    wynik = await tools.djangoql_schema("rekord", sekcje=["bpp.zrodlo"])
+    schemat = wynik["schemat"]
+    assert schemat.startswith("bpp.zrodlo:")
+    # Dobrana sekcja przychodzi SAMA — bez preambuły i bez słowników.
+    assert "# BPP" not in schemat
+    assert "start model:" not in schemat
+    assert "dictionaries" not in schemat
+
+
+async def test_djangoql_schema_wiele_sekcji_w_kolejnosci_z_pliku():
+    # W pliku ``bpp.zrodlo`` leży przed ``bpp.jednostka`` — kolejność argumentów
+    # nie ma znaczenia, wynik jest deterministyczny.
+    odwrotnie = await tools.djangoql_schema(
+        "rekord", sekcje=["bpp.jednostka", "bpp.zrodlo"]
+    )
+    wprost = await tools.djangoql_schema(
+        "rekord", sekcje=["bpp.zrodlo", "bpp.jednostka"]
+    )
+    assert odwrotnie["schemat"] == wprost["schemat"]
+    schemat = wprost["schemat"]
+    assert schemat.index("bpp.zrodlo:") < schemat.index("bpp.jednostka:")
+
+
+async def test_djangoql_schema_pusta_lista_sekcji_to_rdzen():
+    pusta = await tools.djangoql_schema("rekord", sekcje=[])
+    assert pusta["schemat"] == (await tools.djangoql_schema("rekord"))["schemat"]
+
+
+async def test_djangoql_schema_nieznana_sekcja_z_podpowiedzia():
+    with pytest.raises(BppError) as exc:
+        await tools.djangoql_schema("rekord", sekcje=["bpp.zrodla"])
+    komunikat = str(exc.value)
+    assert "bpp.zrodla" in komunikat
+    # difflib podpowiada najbliższą istniejącą nazwę.
+    assert "bpp.zrodlo" in komunikat
+
+
+async def test_djangoql_schema_sekcja_korzenia_odrzucona():
+    with pytest.raises(BppError) as exc:
+        await tools.djangoql_schema("rekord", sekcje=["bpp.rekord"])
+    assert "rdzeni" in str(exc.value)
+
+
+async def test_djangoql_schema_sekcje_dostepne_w_obu_trybach():
+    for wynik in (
+        await tools.djangoql_schema("rekord"),
+        await tools.djangoql_schema("rekord", sekcje=["bpp.zrodlo"]),
+    ):
+        dostepne = wynik["sekcje_dostepne"]
+        assert isinstance(dostepne, list)
+        assert dostepne
+        assert "bpp.zrodlo" in dostepne
+        # Korzeń i słowniki są już w rdzeniu — nie ma po co ich dobierać.
+        assert "bpp.rekord" not in dostepne
+        assert "dictionaries" not in dostepne

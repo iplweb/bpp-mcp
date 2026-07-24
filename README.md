@@ -1,5 +1,7 @@
 # bpp-mcp
 
+[![PyPI](https://img.shields.io/pypi/v/bpp-mcp.svg)](https://pypi.org/project/bpp-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/bpp-mcp.svg)](https://pypi.org/project/bpp-mcp/)
 [![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
 [![docs](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml)
 
@@ -23,11 +25,16 @@ klientów MCP, narzędzia, DjangoQL):
 
 ## Szybki start
 
-Uruchomienie bezpośrednio z gita przez [uv](https://docs.astral.sh/uv/):
+Pakiet jest na [PyPI](https://pypi.org/project/bpp-mcp/). Najprościej — bez
+instalowania czegokolwiek na stałe, przez [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp
 ```
+
+`BPP_BASE_URL` jest **wymagany** (bez wartości domyślnej) — wskazuje instancję
+BPP, z którą łączy się serwer. Szczegóły instalacji (m.in. `uv tool install` /
+`pip`, wersja rozwojowa z gita): [Instalacja](https://iplweb.github.io/bpp-mcp/instalacja/).
 
 Serwer komunikuje się po stdio (standard MCP) — normalnie uruchamia go klient
 MCP, nie użytkownik ręcznie. Jak podłączyć go do konkretnego asystenta

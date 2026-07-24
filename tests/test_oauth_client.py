@@ -35,6 +35,65 @@ def test_discover():
 
 
 @respx.mock
+def test_discover_fallback_na_403_nginx():
+    """Instancja za nginxem blokującym `/.well-known/` (reguła na pliki ukryte)
+    zwraca 403 zamiast metadanych. Endpointy django-oauth-toolkit leżą wtedy
+    pod konwencjonalnym `/o/*` — cofamy się tam zamiast wywracać logowanie."""
+    respx.get(META_URL).mock(
+        return_value=httpx.Response(403, html="<html>403 Forbidden</html>")
+    )
+    meta = oauth_client.discover(BASE)
+    assert meta.authorization_endpoint == f"{BASE}/o/authorize/"
+    assert meta.token_endpoint == f"{BASE}/o/token/"
+    assert meta.registration_endpoint == f"{BASE}/o/register/"
+
+
+@respx.mock
+def test_discover_fallback_na_404():
+    respx.get(META_URL).mock(return_value=httpx.Response(404))
+    assert oauth_client.discover(BASE).token_endpoint == f"{BASE}/o/token/"
+
+
+@respx.mock
+def test_discover_fallback_gdy_200_ale_nie_json():
+    """Proxy/WAF potrafi oddać 200 ze stroną HTML — to nie są metadane."""
+    respx.get(META_URL).mock(
+        return_value=httpx.Response(200, html="<html>logowanie</html>")
+    )
+    assert oauth_client.discover(BASE).authorization_endpoint == f"{BASE}/o/authorize/"
+
+
+@respx.mock
+def test_discover_fallback_gdy_json_bez_wymaganych_pol():
+    respx.get(META_URL).mock(return_value=httpx.Response(200, json={"issuer": BASE}))
+    assert oauth_client.discover(BASE).token_endpoint == f"{BASE}/o/token/"
+
+
+@respx.mock
+def test_discover_prawidlowe_metadane_maja_pierwszenstwo_nad_fallbackiem():
+    """Fallback NIE może nadpisywać instancji, która publikuje metadane pod
+    niestandardowymi ścieżkami (np. osobny serwer autoryzacji)."""
+    respx.get(META_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "authorization_endpoint": "https://sso.inny.pl/authorize",
+                "token_endpoint": "https://sso.inny.pl/token",
+            },
+        )
+    )
+    meta = oauth_client.discover(BASE)
+    assert meta.authorization_endpoint == "https://sso.inny.pl/authorize"
+    assert meta.token_endpoint == "https://sso.inny.pl/token"
+
+
+@respx.mock
+def test_discover_fallback_gdy_siec_padla():
+    respx.get(META_URL).mock(side_effect=httpx.ConnectError("brak sieci"))
+    assert oauth_client.discover(BASE).token_endpoint == f"{BASE}/o/token/"
+
+
+@respx.mock
 def test_register_client():
     meta = Metadata(f"{BASE}/o/authorize/", f"{BASE}/o/token/", f"{BASE}/o/register/")
     route = respx.post(f"{BASE}/o/register/").mock(

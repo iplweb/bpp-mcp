@@ -1,0 +1,102 @@
+name: release
+
+# Wydanie wyzwala push tagu `vX.Y.Z`. Numer wersji NIE jest brany z tagu —
+# tag musi się zgadzać z `project.version` w pyproject.toml, inaczej job `build`
+# przerywa. Powód: wersja raz opublikowana na PyPI jest nieodwracalna (`yank`
+# ukrywa wydanie, ale nie zwalnia numeru).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # Ta sama matryca (3.10–3.13 + ruff) co przy zwykłym pushu — nic nie leci na
+  # PyPI, jeśli testy nie są zielone.
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  build:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zainstaluj uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.13"
+
+      - name: Sprawdź zgodność tagu z wersją w pyproject.toml
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          ver="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (wersja ${tag}) nie zgadza się z project.version w pyproject.toml (${ver}). Popraw wersję albo tag — numeru na PyPI nie da się odzyskać."
+            exit 1
+          fi
+          echo "Tag zgodny z wersją ${ver}."
+
+      - name: Zbuduj sdist i wheel
+        run: uv build
+
+      - name: Twine check (README musi się renderować na PyPI)
+        run: uvx twine check --strict dist/*
+
+      # Zasoby danych to pliki *.txt, nie *.py — dokładnie ta klasa plików, którą
+      # packaging gubi po cichu. Bez nich `djangoql_schema` wywala się dopiero
+      # w runtime u użytkownika.
+      - name: Sanity — zasoby danych w kole
+        run: |
+          python3 - <<'PY'
+          import glob
+          import sys
+          import zipfile
+
+          wymagane = {
+              "bpp_mcp/data/rekord_djangoql_schema.compact.txt",
+              "bpp_mcp/data/autor_djangoql_schema.compact.txt",
+              "bpp_mcp/data/autorzy_djangoql_schema.compact.txt",
+          }
+          kola = glob.glob("dist/*.whl")
+          if len(kola) != 1:
+              sys.exit(f"Oczekiwano dokładnie jednego koła w dist/, jest: {kola}")
+          with zipfile.ZipFile(kola[0]) as z:
+              obecne = set(z.namelist())
+          brakuje = sorted(wymagane - obecne)
+          if brakuje:
+              sys.exit("W kole brakuje zasobów danych: " + ", ".join(brakuje))
+          print(f"Wszystkie {len(wymagane)} zasoby danych obecne w {kola[0]}.")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # Osobny job: `id-token: write` (token OIDC wymieniany na jednorazowe
+  # uprawnienie do publikacji) ma WYŁĄCZNIE ten krok, który nie wykonuje żadnego
+  # kodu z repozytorium ani z zależności — pobiera gotowy artefakt i woła jedną
+  # przypiętą akcję.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Opublikuj na PyPI (trusted publishing, OIDC)
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1

@@ -1,6 +1,6 @@
 [project]
 name = "bpp-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Serwer MCP dla API BPP (Bibliografia Publikacji Pracowników)"
 readme = "README.md"
 requires-python = ">=3.10"
