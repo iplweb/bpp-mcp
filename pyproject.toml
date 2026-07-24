@@ -38,6 +38,11 @@ dev = [
     "respx>=0.21",
     "ruff>=0.6",
 ]
+# `mkdocs-material` ciągnie już `pymdown-extensions` i `mkdocs`, więc nie
+# dublujemy ich tutaj. Podgląd lokalny: `uv run --extra docs mkdocs serve`.
+docs = [
+    "mkdocs-material>=9.5",
+]
 
 [build-system]
 requires = ["hatchling"]

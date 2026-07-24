@@ -1,0 +1,61 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    # Negacja `!docs/superpowers/**`: edycje speców brainstormingu nie wyzwalają
+    # deployu. Bump zależności (pyproject/uv.lock) — wyzwala (build robi uv sync).
+    paths:
+      - "docs/**"
+      - "!docs/superpowers/**"
+      - "mkdocs.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# Domyślnie minimalnie; build tylko czyta kod. Uprawnienia do Pages nadaje się
+# per-job (deploy), żeby build ich nie dostawał.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zainstaluj uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Zsynchronizuj zależności (extra docs)
+        run: uv sync --extra docs
+
+      - name: Zbuduj dokumentację (--strict)
+        run: uv run mkdocs build --strict
+
+      - name: Wgraj artefakt Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # MkDocs pisze do `site/` (domyślny artefaktu to `_site/`).
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Wdróż na GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

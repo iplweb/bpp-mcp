@@ -12,6 +12,9 @@ dist/
 venv/
 .python-version
 
+# dokumentacja (MkDocs build)
+site/
+
 # testy / narzędzia
 .pytest_cache/
 .ruff_cache/
