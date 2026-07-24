@@ -92,9 +92,14 @@ jobs:
           print('paczka importuje się czysto')
           "
 
+      # Tylko dla tagu. Uruchomienie ręczne (workflow_dispatch) leci z gałęzi,
+      # gdzie `ref_name` to "main" — bez tego warunku krok założyłby wydanie
+      # o nazwie "main". Ręczny bieg ma tylko zbudować paczkę i ją sprawdzić.
+      #
       # TAG idzie przez env, a nie przez wklejenie `${{ }}` w linię powłoki:
       # nazwa tagu to tekst od autora wydania i inaczej wykonałby ją bash.
       - name: Podepnij do wydania
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
