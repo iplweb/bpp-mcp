@@ -9,13 +9,21 @@ Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP**
 ([Bibliografia Publikacji Pracowników](https://bpp.iplweb.pl)). Wystawia
 read-only, anonimowe API BPP (`/api/v1/`) jako
 zestaw starannie dobranych, typowanych narzędzi dla Claude Desktop, Claude Code,
-ChatGPT i innych klientów MCP.
+ChatGPT i innych klientów MCP. Dokumentacja online:
+**[iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**.
 
 Zamiast żmudnego chodzenia po hyperlinkach REST-owych (publikacja → autorzy →
 jednostka → …), serwer robi to za agenta: rozwija relacje, auto-follow-uje
 paginację i zwraca gotowe, zagnieżdżone obiekty. `pobierz_rekord` zwraca jeden
 obiekt z rozwiniętymi autorami (nazwisko jak wydrukowane), źródłem i
 streszczeniami — zamiast kilkunastu żądań REST.
+
+## 📖 Dokumentacja
+
+Pełna dokumentacja (instalacja, konfiguracja, uwierzytelnianie, podłączanie do
+klientów MCP, narzędzia, DjangoQL):
+
+**→ [iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**
 
 ## Szybki start
 
@@ -54,13 +62,6 @@ w sekcji **Demo** niżej.
 > BPP, z którą łączy się serwer. Inne sposoby instalacji (`uv tool install`,
 > `pip`, wersja rozwojowa z gita):
 > [Instalacja](https://iplweb.github.io/bpp-mcp/instalacja/).
-
-## 📖 Dokumentacja
-
-Pełna dokumentacja (instalacja, konfiguracja, uwierzytelnianie, podłączanie do
-klientów MCP, narzędzia, DjangoQL):
-
-**→ [iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**
 
 ## Demo — przykładowe zapytania
 
