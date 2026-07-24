@@ -27,10 +27,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Zainstaluj uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: "3.12"
 
@@ -41,7 +41,7 @@ jobs:
         run: uv run mkdocs build --strict
 
       - name: Wgraj artefakt Pages
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           # MkDocs pisze do `site/` (domyślny artefaktu to `_site/`).
           path: site
@@ -58,4 +58,4 @@ jobs:
     steps:
       - name: Wdróż na GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
