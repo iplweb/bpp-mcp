@@ -9,6 +9,7 @@ Sieć przez ``httpx`` (wstrzykiwalny ``client`` do testów).
 from __future__ import annotations
 
 import base64
+import enum
 import hashlib
 import queue
 import secrets
@@ -21,6 +22,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
+from pydantic import AnyHttpUrl
 
 from .token_store import TokenSet
 
@@ -36,6 +38,14 @@ class Metadata:
     authorization_endpoint: str
     token_endpoint: str
     registration_endpoint: str | None
+    revocation_endpoint: str | None = None
+
+
+class AuthMode(enum.Enum):
+    """Tryb, w jakim serwer HTTP wystawia discovery OAuth klientowi MCP."""
+
+    PASSTHROUGH = "passthrough"  # instancja z #21 — klient idzie wprost do BPP
+    PROXY = "proxy"  # instancja bez #21 — bpp-mcp serwuje własne metadane AS
 
 
 def _client_ctx(client: httpx.Client | None) -> tuple[httpx.Client, bool]:
@@ -47,14 +57,70 @@ def _client_ctx(client: httpx.Client | None) -> tuple[httpx.Client, bool]:
 def _konwencjonalne(base_url: str) -> Metadata:
     """Ścieżki, pod którymi BPP montuje serwer autoryzacji (``oauth_mcp/urls.py``).
 
-    Używane jako fallback, gdy metadanych RFC 8414 nie da się odczytać.
+    Używane jako fallback, gdy metadanych RFC 8414 nie da się odczytać, oraz
+    jako źródło endpointów dla trybu PROXY (:func:`authorization_server_metadata`).
     """
     base = base_url.rstrip("/")
     return Metadata(
         authorization_endpoint=f"{base}/o/authorize/",
         token_endpoint=f"{base}/o/token/",
         registration_endpoint=f"{base}/o/register/",
+        revocation_endpoint=f"{base}/o/revoke_token/",
     )
+
+
+def probe_instance(base_url: str, *, client: httpx.Client | None = None) -> AuthMode:
+    """Wykryj, czy instancja BPP wystawia poprawne metadane RFC 8414.
+
+    PASS-THROUGH tylko przy potwierdzonym 200 + obiekt JSON z polami
+    ``authorization_endpoint`` oraz ``token_endpoint`` (warunek identyczny z
+    sukcesem :func:`discover`). Wszystko inne — 403 od nginxa blokującego
+    ``/.well-known/``, HTML zamiast JSON, 5xx, timeout, brak pól — daje PROXY.
+    PROXY jest bezpiecznym stanem domyślnym: endpointy ``/o/*`` istnieją na
+    każdej instancji BPP niezależnie od wdrożenia #21.
+    """
+    url = f"{base_url.rstrip('/')}/.well-known/oauth-authorization-server"
+    cli, owns = _client_ctx(client)
+    try:
+        resp = cli.get(url)
+        if resp.status_code != 200:
+            return AuthMode.PROXY
+        data = resp.json()
+        if not isinstance(data, dict):
+            return AuthMode.PROXY
+        if "authorization_endpoint" not in data or "token_endpoint" not in data:
+            return AuthMode.PROXY
+        return AuthMode.PASSTHROUGH
+    except (httpx.HTTPError, ValueError):
+        return AuthMode.PROXY
+    finally:
+        if owns:
+            cli.close()
+
+
+def authorization_server_metadata(base_url: str, issuer: str) -> dict:
+    """Dokument RFC 8414 dla trybu PROXY: ``issuer`` = URL bpp-mcp (adres, spod
+    którego klient pobiera ten dokument), endpointy → ``BPP/o/*``.
+
+    Kopiuje kontrakt z ``bpp/src/oauth_mcp/views_metadata.py``, by PROXY i
+    PASS-THROUGH dawały klientowi identyczny obraz serwera autoryzacji.
+    """
+    m = _konwencjonalne(base_url)
+    # Normalizacja przez AnyHttpUrl daje formę IDENTYCZNĄ z tą, którą
+    # AuthSettings wystawia w PRM (authorization_servers) — inaczej trailing
+    # slash rozjechałby issuer między PRM a dokumentem AS (RFC 8414 §3.3).
+    return {
+        "issuer": str(AnyHttpUrl(issuer)),
+        "authorization_endpoint": m.authorization_endpoint,
+        "token_endpoint": m.token_endpoint,
+        "registration_endpoint": m.registration_endpoint,
+        "revocation_endpoint": m.revocation_endpoint,
+        "scopes_supported": ["read"],
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+    }
 
 
 def discover(base_url: str, *, client: httpx.Client | None = None) -> Metadata:
