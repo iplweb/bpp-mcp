@@ -83,10 +83,13 @@ class Config:
         """URL issuera dla trybu PROXY: pole ``issuer`` w metadanych AS musi
         równać się adresowi, spod którego klient pobiera well-known bpp-mcp.
         Domyślnie ``effective_resource_url`` bez sufiksu ``/mcp``; nadpisywalny
-        przez ``BPP_MCP_ISSUER_URL`` (wdrożenia za reverse-proxy)."""
+        przez ``BPP_MCP_ISSUER_URL`` (wdrożenia za reverse-proxy). Issuer MUSI
+        być gołym originem (``scheme://host[:port]``) bez ścieżki — klient MCP
+        buduje URL discovery inaczej dla issuera ze ścieżką i nie trafiłby w
+        naszą trasę ``/.well-known/oauth-authorization-server``."""
         if self.issuer_url:
             return self.issuer_url
-        return self.effective_resource_url.removesuffix("/mcp")
+        return self.effective_resource_url.rstrip("/").removesuffix("/mcp")
 
     @property
     def auth_tuple(self) -> tuple[str, str] | None:

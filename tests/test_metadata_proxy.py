@@ -19,7 +19,11 @@ def test_metadata_issuer_self_endpointy_bpp():
     assert doc["token_endpoint_auth_methods_supported"] == ["none"]
 
 
-def test_metadata_issuer_ze_sciezka_reverse_proxy():
-    # Za reverse-proxy issuer ma ścieżkę — AnyHttpUrl NIE dokłada ukośnika.
+def test_metadata_issuer_ze_sciezka_normalizacja():
+    # Builder poprawnie odwzorowuje issuer ze ścieżką (AnyHttpUrl NIE dokłada
+    # ukośnika). UWAGA: taki issuer to NIE wspierana konfiguracja discovery —
+    # klient MCP buduje wtedy URL-e path-inserted i nie trafia w naszą gołą
+    # trasę /.well-known/oauth-authorization-server. issuer musi być gołym
+    # originem; ten test sprawdza tylko konstrukcję dokumentu, nie osiągalność.
     doc = authorization_server_metadata("https://bpp.test", "https://mcp.example/bpp")
     assert doc["issuer"] == "https://mcp.example/bpp"

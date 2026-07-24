@@ -73,9 +73,10 @@ def probe_instance(base_url: str, *, client: httpx.Client | None = None) -> Auth
     """Wykryj, czy instancja BPP wystawia poprawne metadane RFC 8414.
 
     PASS-THROUGH tylko przy potwierdzonym 200 + obiekt JSON z polami
-    ``authorization_endpoint`` oraz ``token_endpoint`` (warunek identyczny z
-    sukcesem :func:`discover`). Wszystko inne — 403 od nginxa blokującego
-    ``/.well-known/``, HTML zamiast JSON, 5xx, timeout, brak pól — daje PROXY.
+    ``authorization_endpoint`` oraz ``token_endpoint`` (te same pola co warunek
+    sukcesu :func:`discover`; probe jest ciaśniejszy — wymaga dokładnie 200, nie
+    dowolnego 2xx). Wszystko inne — 403 od nginxa blokującego ``/.well-known/``,
+    HTML zamiast JSON, 5xx, timeout, brak pól — daje PROXY.
     PROXY jest bezpiecznym stanem domyślnym: endpointy ``/o/*`` istnieją na
     każdej instancji BPP niezależnie od wdrożenia #21.
     """

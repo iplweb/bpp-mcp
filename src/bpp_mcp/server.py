@@ -353,7 +353,13 @@ def build_mcp(
 def _register_as_metadata_route(mcp: FastMCP, config: Config) -> None:
     """PROXY: wystaw metadane serwera autoryzacji (RFC 8414) pod adresem
     bpp-mcp, wskazując endpointy na ``BPP/o/*``. Dla instancji bez #21, gdzie
-    ``BPP/.well-known/`` oddaje 403."""
+    ``BPP/.well-known/`` oddaje 403.
+
+    Nagłówek ``Access-Control-Allow-Origin: *`` jak w PRM od SDK — bez niego
+    klient przeglądarkowy (zdalny connector) przeszedłby krok 1 discovery (PRM),
+    a padł na kroku 2 (metadane AS blokowane przez SOP). Dokument jest publiczny,
+    więc ``*`` jest tu poprawne. Discovery to proste GET-y (bez preflightu), więc
+    sam nagłówek na odpowiedzi wystarcza."""
     from starlette.requests import Request
     from starlette.responses import JSONResponse
 
@@ -362,7 +368,8 @@ def _register_as_metadata_route(mcp: FastMCP, config: Config) -> None:
         return JSONResponse(
             oauth_client.authorization_server_metadata(
                 config.base_url, config.effective_issuer_url
-            )
+            ),
+            headers={"Access-Control-Allow-Origin": "*"},
         )
 
 

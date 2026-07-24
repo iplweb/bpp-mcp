@@ -92,6 +92,25 @@ async def test_proxy_serwuje_metadane_as():
 
 
 @pytest.mark.asyncio
+async def test_proxy_metadane_as_maja_cors():
+    # Bez ACAO klient przeglądarkowy (zdalny connector) padłby na kroku 2
+    # discovery — SOP zablokowałby odczyt. SDK daje to samo dla PRM.
+    from bpp_mcp.oauth_client import AuthMode
+
+    app = build_mcp(_http_cfg(), AuthMode.PROXY).streamable_http_app()
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as c:
+        resp = await c.get(
+            "/.well-known/oauth-authorization-server",
+            headers={"Origin": "https://claude.ai"},
+        )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "*"
+
+
+@pytest.mark.asyncio
 async def test_proxy_prm_wskazuje_na_self():
     from bpp_mcp.oauth_client import AuthMode
 

@@ -100,7 +100,9 @@ adresem HTTPS.
     Dzięki temu przycisk działa podczas stopniowego wdrażania fixu — po jego
     dojściu na daną instancję wystarczy zrestartować jej `bpp-mcp`, a ta
     przeskoczy na pass-through. Za reverse-proxy `issuer` nadpiszesz przez
-    `BPP_MCP_ISSUER_URL`.
+    `BPP_MCP_ISSUER_URL` — musi to być **goły origin** (`https://host[:port]`,
+    bez ścieżki); dla issuera ze ścieżką klient MCP buduje URL discovery inaczej
+    i nie trafi w trasę metadanych `bpp-mcp`.
 
 !!! danger "Bezpieczeństwo"
     Trzymaj `--host 127.0.0.1` (domyślnie). Bind na inny host wyłącza wbudowaną
