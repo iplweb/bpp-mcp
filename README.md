@@ -5,24 +5,6 @@
 [![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
 [![docs](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml)
 
-## Szybki start
-
-Pakiet jest na [PyPI](https://pypi.org/project/bpp-mcp/). Najprościej — bez
-instalowania czegokolwiek na stałe, przez [uv](https://docs.astral.sh/uv/):
-
-```bash
-BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp
-```
-
-`BPP_BASE_URL` jest **wymagany** (bez wartości domyślnej) — wskazuje instancję
-BPP, z którą łączy się serwer. Szczegóły instalacji (m.in. `uv tool install` /
-`pip`, wersja rozwojowa z gita): [Instalacja](https://iplweb.github.io/bpp-mcp/instalacja/).
-
-Serwer komunikuje się po stdio (standard MCP) — normalnie uruchamia go klient
-MCP, nie użytkownik ręcznie. Jak podłączyć go do konkretnego asystenta
-(Claude Desktop/Code, ChatGPT, Cursor, VS Code, Windsurf, LM Studio, Zed i inne):
-**[Klienci MCP](https://iplweb.github.io/bpp-mcp/klienci/)**.
-
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP** (Bibliografia
 Publikacji Pracowników). Wystawia read-only, anonimowe API BPP (`/api/v1/`) jako
 zestaw kuratorowanych, typowanych narzędzi dla Claude Desktop, Claude Code,
@@ -33,6 +15,44 @@ jednostka → …), serwer robi to za agenta: rozwija relacje, auto-follow-uje
 paginację i zwraca gotowe, zagnieżdżone obiekty. `pobierz_rekord` zwraca jeden
 obiekt z rozwiniętymi autorami (nazwisko jak wydrukowane), źródłem i
 streszczeniami — zamiast kilkunastu żądań REST.
+
+## Szybki start
+
+`bpp-mcp` to serwer MCP działający po stdio — **nie uruchamiasz go samodzielnie**
+w terminalu (odpalony ręcznie tylko czeka w ciszy na klienta na standardowym
+wejściu). „Uruchomienie" polega na **dodaniu serwera do klienta MCP**, który
+startuje go za Ciebie i przez którego z nim rozmawiasz. Pakiet jest na
+[PyPI](https://pypi.org/project/bpp-mcp/) — przez [uv](https://docs.astral.sh/uv/)
+klient pobierze go i odpali bez instalacji (komenda `uvx bpp-mcp`).
+
+**1. Dodaj serwer do klienta.** Najkrócej — Claude Code. W **terminalu** (nie
+w sesji Claude Code) wpisz, podmieniając adres na swoją instancję BPP:
+
+```bash
+claude mcp add bpp --transport stdio --env BPP_BASE_URL=https://bpp.twoja-uczelnia.pl \
+  -- uvx bpp-mcp
+```
+
+- Nazwa serwera (`bpp`) musi stać **przed** `--env` (flaga jest zachłanna —
+  pochłania kolejne `KEY=value`), a `--` oddziela flagi `claude` od komendy
+  uruchamiającej serwer (`uvx bpp-mcp`).
+- Dopisz `--scope user`, by serwer był dostępny we wszystkich Twoich projektach
+  (domyślnie tylko w bieżącym).
+- Sprawdź, że wstał: `claude mcp list` w terminalu albo `/mcp` w sesji Claude Code.
+
+Pełny opis (scope, równoważny wpis w `.mcp.json`):
+[Claude Code](https://iplweb.github.io/bpp-mcp/klienci/claude-code/). Claude
+Desktop i pozostałe klienty (ChatGPT, Cursor, VS Code, Windsurf, LM Studio, Zed…)
+mają gotowe, sprawdzone wpisy tutaj:
+**[Klienci MCP](https://iplweb.github.io/bpp-mcp/klienci/)**.
+
+**2. Pytaj asystenta o dane BPP.** To wszystko — zwykłym zdaniem, przykłady
+w sekcji **Demo** niżej.
+
+> **`BPP_BASE_URL` jest wymagany** (bez wartości domyślnej) — wskazuje instancję
+> BPP, z którą łączy się serwer. Inne sposoby instalacji (`uv tool install`,
+> `pip`, wersja rozwojowa z gita):
+> [Instalacja](https://iplweb.github.io/bpp-mcp/instalacja/).
 
 ## 📖 Dokumentacja
 
