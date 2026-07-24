@@ -1,0 +1,96 @@
+site_name: bpp-mcp
+site_description: >-
+  Serwer MCP dla API BPP (Bibliografia Publikacji Pracowników) — dokumentacja:
+  instalacja, konfiguracja, uwierzytelnianie i podłączanie do klientów MCP.
+site_url: https://iplweb.github.io/bpp-mcp/
+
+repo_url: https://github.com/iplweb/bpp-mcp
+repo_name: iplweb/bpp-mcp
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  language: pl
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Przełącz na tryb ciemny
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Przełącz na tryb jasny
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  # Snippety z centralnego katalogu docs/_snippets/. `!relative $config_dir`
+  # rozwiązuje base_path względem mkdocs.yml (nie CWD) — działa niezależnie od
+  # katalogu wywołania. `check_paths` zamienia brak snippetu w błąd builda.
+  - pymdownx.snippets:
+      base_path: [!relative $config_dir]
+      check_paths: true
+
+# `--strict` domyślnie NIE łapie złych #anchorów ani linków absolutnych
+# (to poziom INFO). Podniesienie do `warn` sprawia, że strict je wyłapie.
+validation:
+  links:
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+# MkDocs NADPISUJE domyślne wzorce, a katalogi z `_` nie są specjalne — trzeba
+# wykluczyć jawnie, inaczej snippety i specy publikują się jako sierotki.
+exclude_docs: |
+  .*
+  superpowers/
+  _snippets/
+
+nav:
+  - Start: index.md
+  - Instalacja: instalacja.md
+  - Konfiguracja: konfiguracja.md
+  - Uwierzytelnianie: uwierzytelnianie.md
+  - Klienci MCP:
+      - Przegląd: klienci/index.md
+      - Claude Desktop: klienci/claude-desktop.md
+      - Claude Code: klienci/claude-code.md
+      - ChatGPT: klienci/chatgpt.md
+      - OpenCode: klienci/opencode.md
+      - DeepSeek: klienci/deepseek.md
+      - Cursor: klienci/cursor.md
+      - VS Code (Copilot): klienci/vscode-copilot.md
+      - Windsurf: klienci/windsurf.md
+      - LM Studio: klienci/lm-studio.md
+      - Zed: klienci/zed.md
+      - Inne klienty: klienci/inne.md
+  - Narzędzia: narzedzia.md
+  - DjangoQL: djangoql.md
+  - Rozwój: rozwoj.md
