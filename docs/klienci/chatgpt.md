@@ -15,7 +15,7 @@
 ## Krok 1: uruchom serwer w trybie HTTP
 
 ```bash
-BPP_BASE_URL=https://bpp.umlub.pl uv run bpp-mcp --http --port 8000
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp --http --port 8000
 ```
 
 Serwer wystawia `/mcp` (Streamable HTTP) oraz

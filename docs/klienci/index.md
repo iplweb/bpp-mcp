@@ -32,8 +32,8 @@ Prawie każdy klient stdio uruchamia serwer tą samą komendą:
 się to do trójki:
 
 - **command** — `uvx`
-- **args** — `["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"]`
-- **env** — `{ "BPP_BASE_URL": "https://bpp.umlub.pl" }`
+- **args** — `["bpp-mcp"]`
+- **env** — `{ "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl" }`
 
 --8<-- "docs/_snippets/path-caveat.md"
 

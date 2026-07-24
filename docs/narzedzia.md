@@ -12,7 +12,7 @@
 | `zapytanie_rekord(q, limit=25, offset=0)` | **wykonaj** DjangoQL po publikacjach (`bpp.Rekord`) — autoryzowane |
 | `zapytanie_autor(q, limit=25, offset=0)` | **wykonaj** DjangoQL po autorach (`bpp.Autor`) — autoryzowane |
 | `zapytanie_autorzy(q, limit=25, offset=0)` | **wykonaj** DjangoQL po wpisach autorstwa (`bpp.Autorzy`) — autoryzowane |
-| `djangoql_schema(model="rekord")` | schemat DjangoQL-dla-LLM korzenia `rekord`/`autor`/`autorzy` (do budowy zapytań) |
+| `djangoql_schema(model="rekord", sekcje=None)` | schemat DjangoQL-dla-LLM: rdzeń `rekord`/`autor`/`autorzy`, sekcje relacyjne na żądanie |
 
 !!! warning "Zapytania DjangoQL (`zapytanie_*`) są AUTORYZOWANE"
     Endpointy `/api/v1/zapytanie/{rekord,autor,autorzy}/` wymagają `Bearer` (tryb

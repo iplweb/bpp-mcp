@@ -6,8 +6,8 @@ podłączysz tą samą komendą, różni się tylko miejsce konfiguracji:
 --8<-- "docs/_snippets/uvx-cmd.md"
 
 W formularzach/JSON-ach wpisujesz zwykle: **command** = `uvx`, **args** =
-`["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"]`, **env** =
-`{ "BPP_BASE_URL": "https://bpp.umlub.pl" }`.
+`["bpp-mcp"]`, **env** =
+`{ "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl" }`.
 
 --8<-- "docs/_snippets/path-caveat.md"
 

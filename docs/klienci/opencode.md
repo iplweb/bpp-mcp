@@ -21,10 +21,10 @@ Globalnie `~/.config/opencode/opencode.json` albo w katalogu projektu
   "mcp": {
     "bpp": {
       "type": "local",
-      "command": ["uvx", "--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"],
+      "command": ["uvx", "bpp-mcp"],
       "enabled": true,
       "environment": {
-        "BPP_BASE_URL": "https://bpp.umlub.pl"
+        "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl"
       }
     }
   }

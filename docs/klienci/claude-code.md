@@ -7,8 +7,8 @@ Claude Code (CLI) dodaje serwery stdio komendą `claude mcp add`.
 ## Dodanie serwera
 
 ```bash
-claude mcp add bpp --transport stdio --env BPP_BASE_URL=https://bpp.umlub.pl \
-  -- uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp
+claude mcp add bpp --transport stdio --env BPP_BASE_URL=https://bpp.twoja-uczelnia.pl \
+  -- uvx bpp-mcp
 ```
 
 !!! warning "Kolejność argumentów"
@@ -36,8 +36,8 @@ Wpis równoważny w `.mcp.json` (scope `project`):
   "mcpServers": {
     "bpp": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"],
-      "env": { "BPP_BASE_URL": "https://bpp.umlub.pl" }
+      "args": ["bpp-mcp"],
+      "env": { "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl" }
     }
   }
 }

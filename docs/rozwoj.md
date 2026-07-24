@@ -30,3 +30,22 @@ uv run mkdocs build --strict
 
 Po merge do `main` workflow `.github/workflows/docs.yml` publikuje stronę na
 [GitHub Pages](https://iplweb.github.io/bpp-mcp/).
+
+## Wydanie na PyPI
+
+Publikacja idzie przez
+[trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) — w
+repozytorium nie ma i nie może być tokenu API PyPI. Wydanie wyzwala push tagu:
+
+```bash
+# 1. podbij `version` w pyproject.toml, zacommituj
+# 2. otaguj i wypchnij
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+Workflow `.github/workflows/release.yml` przepuszcza pełną matrycę testów,
+**sprawdza, czy tag zgadza się z `project.version`** (rozjazd = przerwane
+wydanie, bo numeru raz zajętego na PyPI nie da się odzyskać), buduje sdist +
+wheel, weryfikuje je `twine check --strict` i obecność zbundlowanych schematów
+DjangoQL, po czym publikuje z osobnego joba w środowisku `pypi`.

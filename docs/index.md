@@ -18,7 +18,8 @@ tę złożoność: `pobierz_rekord` zwraca jeden obiekt z rozwiniętymi autorami
 
 ## Szybki start
 
-Uruchomienie bezpośrednio z gita przez [uv](https://docs.astral.sh/uv/):
+Uruchomienie z [PyPI](https://pypi.org/project/bpp-mcp/) przez
+[uv](https://docs.astral.sh/uv/):
 
 --8<-- "docs/_snippets/uvx-cmd.md"
 

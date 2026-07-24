@@ -7,12 +7,18 @@ wdrożenia BPP przez zmienne środowiskowe.
 
 | Zmienna | Domyślnie | Opis |
 |---|---|---|
-| `BPP_BASE_URL` | `https://bpp.umlub.pl` | bazowy URL instancji BPP (API i issuer OAuth) |
+| `BPP_BASE_URL` | **wymagany** | bazowy URL instancji BPP (API i issuer OAuth) — bez wartości domyślnej |
 | `BPP_BASIC_AUTH` | *(brak)* | opcjonalny `user:pass` (tylko raporty slotów, stdio) |
 | `BPP_MCP_TRANSPORT` | `stdio` | `stdio` (anon) lub `http` (OAuth per-user) |
 | `BPP_MCP_HTTP_HOST` | `127.0.0.1` | bind serwera HTTP (tryb `http`) |
 | `BPP_MCP_HTTP_PORT` | `8000` | port serwera HTTP (tryb `http`) |
 | `BPP_MCP_RESOURCE_URL` | `http://<host>:<port>/mcp` | pole `resource` w protected-resource-metadata |
+
+!!! warning "`BPP_BASE_URL` jest wymagany"
+    Bez niego serwer **nie wystartuje** — tylko wypisze, czego brakuje. To celowe:
+    każde wdrożenie BPP to inna uczelnia i inna bibliografia, więc zaszyty host
+    domyślny oznaczałby, że użytkownik bez tej zmiennej dostaje cudze dane
+    wyglądające na własne.
 
 ## Wiele instancji BPP
 
@@ -25,7 +31,7 @@ klienta) — patrz [Klienci MCP](klienci/index.md). Przykład dla Claude Desktop
   "mcpServers": {
     "bpp": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"],
+      "args": ["bpp-mcp"],
       "env": { "BPP_BASE_URL": "https://twoja-instancja.example.pl" }
     }
   }

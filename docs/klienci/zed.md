@@ -14,9 +14,9 @@ Otwórz ustawienia (`zed: open settings file`) i dodaj:
   "context_servers": {
     "bpp": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"],
+      "args": ["bpp-mcp"],
       "env": {
-        "BPP_BASE_URL": "https://bpp.umlub.pl"
+        "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl"
       }
     }
   }

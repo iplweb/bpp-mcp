@@ -1,3 +1,3 @@
 ```bash
-uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp
+BPP_BASE_URL=https://bpp.twoja-uczelnia.pl uvx bpp-mcp
 ```

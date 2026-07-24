@@ -1,4 +1,5 @@
 !!! note "Zmienna `BPP_BASE_URL`"
-    Wskazuje instancję BPP, z którą łączy się serwer (domyślnie
-    `https://bpp.umlub.pl`). Podmień ją na adres **swojej** instancji. Pełna lista
-    zmiennych: [Konfiguracja](../konfiguracja.md).
+    **Wymagana** (bez wartości domyślnej) — wskazuje instancję BPP, z którą łączy
+    się serwer. Podmień `https://bpp.twoja-uczelnia.pl` na adres **swojej**
+    instancji. Bez niej serwer nie wystartuje. Pełna lista zmiennych:
+    [Konfiguracja](../konfiguracja.md).

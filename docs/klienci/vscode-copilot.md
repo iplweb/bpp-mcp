@@ -20,9 +20,9 @@ W projekcie `.vscode/mcp.json` (albo w konfiguracji użytkownika przez komendę
     "bpp": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/iplweb/bpp-mcp", "bpp-mcp"],
+      "args": ["bpp-mcp"],
       "env": {
-        "BPP_BASE_URL": "https://bpp.umlub.pl"
+        "BPP_BASE_URL": "https://bpp.twoja-uczelnia.pl"
       }
     }
   }
