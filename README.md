@@ -16,28 +16,33 @@ paginację i zwraca gotowe, zagnieżdżone obiekty. `pobierz_rekord` zwraca jede
 obiekt z rozwiniętymi autorami (nazwisko jak wydrukowane), źródłem i
 streszczeniami — zamiast kilkunastu żądań REST.
 
-## Demo — przykładowe zapytania
-
-Podłączony do asystenta AI, serwer pozwala pytać o dane BPP zwykłym zdaniem — bez
-znajomości struktury bazy i bez jednego eksportu do arkusza. Dwa przykłady:
-
-> **Przygotuj sylwetkę naukową prof. [Nazwisko]** na podstawie całego dorobku
-> w BPP: obszary badań, najważniejsze publikacje, główne czasopisma, dynamikę
-> w czasie i pozycję autorską. Złóż to w estetyczną, gotową do druku kartę.
-
-> **Złóż sylwetkę Kliniki Nefrologii:** dorobek w liczbach, czołowych autorów,
-> najważniejsze prace, dynamikę w czasie i wstępną gotowość do ewaluacji. Gotowe
-> do druku.
-
-Więcej przykładów i opis możliwości:
-[bpp.iplweb.pl/bpp-ai](https://bpp.iplweb.pl/bpp-ai).
-
 ## 📖 Dokumentacja
 
 Pełna dokumentacja (instalacja, konfiguracja, uwierzytelnianie, podłączanie do
 klientów MCP, narzędzia, DjangoQL):
 
 **→ [iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**
+
+## Demo — przykładowe zapytania
+
+Podłączony do asystenta AI, serwer pozwala pytać o dane BPP zwykłym zdaniem — bez
+znajomości struktury bazy i bez jednego eksportu do arkusza. Dwa przykłady wraz
+z odpowiedziami, jakie zwraca asystent:
+
+> **Przygotuj sylwetkę naukową prof. [Nazwisko]** na podstawie całego dorobku
+> w BPP: obszary badań, najważniejsze publikacje, główne czasopisma, dynamikę
+> w czasie i pozycję autorską. Złóż to w estetyczną, gotową do druku kartę.
+
+![Przykładowa sylwetka naukowca wygenerowana przez asystenta AI](https://bpp.iplweb.pl/images/bpp-ai/sylwetka_naukowca.png)
+
+> **Złóż sylwetkę Kliniki Nefrologii:** dorobek w liczbach, czołowych autorów,
+> najważniejsze prace, dynamikę w czasie i wstępną gotowość do ewaluacji. Gotowe
+> do druku.
+
+![Przykładowa sylwetka jednostki wygenerowana przez asystenta AI](https://bpp.iplweb.pl/images/bpp-ai/sylwetka_jednostki.png)
+
+Więcej przykładów i opis możliwości:
+[bpp.iplweb.pl/bpp-ai](https://bpp.iplweb.pl/bpp-ai).
 
 ## Szybki start
 
