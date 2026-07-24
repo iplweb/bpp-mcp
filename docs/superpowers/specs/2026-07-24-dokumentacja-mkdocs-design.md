@@ -71,45 +71,86 @@ stdio-vs-HTTP) trzymamy w `docs/_snippets/` i wciągamy przez
   `content.code.copy`, `search.highlight`, `search.suggest`.
 - `markdown_extensions`: `admonition`, `pymdownx.details`,
   `pymdownx.superfences`, `pymdownx.highlight`, `pymdownx.inlinehilite`,
-  `pymdownx.snippets` (z `base_path: [docs/_snippets]`),
-  `pymdownx.tabbed` (`alternate_style: true` — zakładki OS / lokalizacje configu),
-  `tables`, `attr_list`, `toc` (`permalink: true`).
+  `pymdownx.snippets`, `pymdownx.tabbed` (`alternate_style: true` — zakładki OS
+  / lokalizacje configu), `tables`, `attr_list`, `toc` (`permalink: true`).
+  - **`pymdownx.snippets`**: `base_path: [!relative $config_dir/_snippets]`
+    (rozwiązywane względem `mkdocs.yml`, nie CWD) + **`check_paths: true`**
+    (błąd, gdy snippet nie istnieje — inaczej brak snippetu jest cicho ignorowany).
 - `repo_url: https://github.com/iplweb/bpp-mcp`, `repo_name: iplweb/bpp-mcp`,
   `edit_uri: edit/main/docs/`.
 - `site_url: https://iplweb.github.io/bpp-mcp/`, `site_name: bpp-mcp`.
-- `exclude_docs: |` z `superpowers/` — specy brainstormingu **nie** trafiają na
-  publiczną stronę.
+- **`exclude_docs`** — MkDocs **nadpisuje** domyślne wzorce, a katalogi z `_`
+  **nie** są traktowane specjalnie, więc trzeba wykluczyć jawnie (inaczej
+  snippety publikują się jako sierotki, a `--strict` tego NIE wychwyci — „not in
+  nav" to tylko INFO):
+  ```yaml
+  exclude_docs: |
+    .*
+    superpowers/
+    _snippets/
+  ```
+  (`pymdownx.snippets` czyta z filesystemu, więc wykluczenie `_snippets/` z
+  builda nie psuje inkluzji.)
+- **`validation`** — domyślnie zły `#anchor` / link absolutny to tylko INFO
+  (niełapane przez `--strict`); podnosimy do `warn`, by `--strict` je wyłapał:
+  ```yaml
+  validation:
+    links:
+      anchors: warn
+      absolute_links: warn
+  ```
 - `nav`: jawna, zgodna ze strukturą z §3.
 
 ## 5. CI — `.github/workflows/docs.yml`
 
-- `on`: `push` na `main` (paths: `docs/**`, `mkdocs.yml`,
-  `.github/workflows/docs.yml`) + `workflow_dispatch`.
-- `permissions`: `contents: read`, `pages: write`, `id-token: write`.
+- `on`: `push` na `main` + `workflow_dispatch`. `paths` z negacją, by edycje
+  specu (`docs/superpowers/**`) NIE wyzwalały deployu, a bump zależności — TAK:
+  ```yaml
+  paths:
+    - 'docs/**'
+    - '!docs/superpowers/**'
+    - 'mkdocs.yml'
+    - 'pyproject.toml'
+    - 'uv.lock'
+    - '.github/workflows/docs.yml'
+  ```
+- **Uprawnienia per-job** (build nie potrzebuje `pages`/`id-token`):
+  - top-level `permissions: contents: read`;
+  - job `deploy`: `permissions: { pages: write, id-token: write }`.
 - `concurrency`: group `pages`, `cancel-in-progress: false`.
-- **job `build`**: `actions/checkout` → `astral-sh/setup-uv` (**pinowane po SHA**,
-  identycznie jak w `tests.yml`) → `uv sync --extra docs` →
-  `uv run mkdocs build --strict` → `actions/upload-pages-artifact` (z `site/`).
-- **job `deploy`**: `environment: github-pages`, `actions/deploy-pages`.
-- Wszystkie akcje **pinowane po SHA** (spójnie z polityką bezpieczeństwa repo).
+- **job `build`**: `actions/checkout` → `astral-sh/setup-uv` → `uv sync --extra
+  docs` → `uv run mkdocs build --strict` → `actions/upload-pages-artifact`
+  z `path: site/` (domyślny artefaktu to `_site/` — MkDocs pisze do `site/`,
+  więc podajemy jawnie).
+- **job `deploy`**: `needs: build`, `environment: { name: github-pages, url:
+  ${{ steps.deployment.outputs.page_url }} }`, `actions/deploy-pages`.
+- **Pinowanie akcji:** `astral-sh/setup-uv` po SHA (ten sam co w `tests.yml`);
+  oficjalne akcje GitHuba po tagu wersji, zgodnie z konwencją `tests.yml`
+  (`actions/checkout@v4`): `upload-pages-artifact@v3` (musi być v3+ po migracji
+  artifact-v4), `deploy-pages@v4` (v4+), `configure-pages@v5`.
 
 ## 6. `pyproject.toml`
 
-Dodać extra `docs`:
+Dodać extra `docs` (bez `pymdown-extensions` — ciągnie je już `mkdocs-material`):
 
 ```toml
 [project.optional-dependencies]
 docs = [
     "mkdocs-material>=9.5",
-    "pymdown-extensions>=10",
 ]
 ```
 
 Lokalny podgląd: `uv run --extra docs mkdocs serve`.
 
+**`uv.lock`:** `uv` locuje wszystkie extra, więc dodanie `docs` zmienia
+`uv.lock` — trzeba go **przegenerować i zacommitować** (`uv lock`), inaczej drzewo
+jest niespójne i CI może się rozjechać.
+
 ## 7. Nowe README (~60–70 linii)
 
-- Tytuł `# bpp-mcp` + badge `tests` + **nowy badge `docs`** (link do Pages).
+- Tytuł `# bpp-mcp` + badge `tests` + **badge statusu workflow `docs.yml`**
+  (jak badge `tests`), a pod spodem wyraźny link tekstowy **📖 Dokumentacja →
+  https://iplweb.github.io/bpp-mcp/**.
 - 2 akapity: co to jest / dlaczego MCP (skrót z obecnego README).
 - **Quick start**: jedna komenda `uvx --from git+https://github.com/iplweb/bpp-mcp bpp-mcp`.
 - Wyraźny link: **📖 Pełna dokumentacja → https://iplweb.github.io/bpp-mcp/**.
@@ -144,21 +185,42 @@ env `BPP_BASE_URL=https://bpp.umlub.pl`.
   Cursor/reszta (`command`+`args`+`env`) — nie kopiować 1:1.
 - **VS Code:** klucz `servers`, nie `mcpServers`.
 
+**DRY między stronami:** `deepseek.md` skupia się na części DeepSeek-specyficznej
+(klucz API, wybór providera modelu) i **linkuje do `inne.md#cherry-studio`** po
+kroki dodania serwera MCP, zamiast je powielać.
+
 ## 9. Testowanie / weryfikacja
 
-- `uv run --extra docs mkdocs build --strict` przechodzi bez ostrzeżeń
-  (strict wyłapie martwe linki wewnętrzne, brakujące pliki nav, złe snippety).
-- `uv run --extra docs mkdocs serve` — lokalny podgląd renderuje się poprawnie.
-- Lint linków wewnętrznych: `--strict` wystarcza dla linków wewn.; linki
-  zewnętrzne (do docs klientów) sprawdzone ręcznie przez agentów researchowych.
+- `uv run --extra docs mkdocs build --strict` przechodzi **bez ostrzeżeń**. Uwaga
+  na realny zakres `--strict` (stąd ustawienia z §4):
+  - brakujące pliki w linkach → domyślnie WARNING (łapane przez strict);
+  - złe `#anchor` / linki absolutne → domyślnie INFO (NIE łapane) — dlatego
+    `validation.links.anchors/absolute_links: warn`;
+  - brak pliku snippetu → domyślnie cicho ignorowany — dlatego
+    `pymdownx.snippets.check_paths: true`;
+  - „not in nav" → tylko INFO — dlatego `_snippets/`/`superpowers/` w
+    `exclude_docs`, a nie liczenie na strict.
+- **Audyt linków przenoszonych z README** (osobny krok, bo inaczej strict
+  wywali build lub przepuści martwe odnośniki):
+  - `[LICENSE](LICENSE)` wskazuje plik **poza** `docs_dir` → w docs zamienić na
+    link do GitHuba (`https://github.com/iplweb/bpp-mcp/blob/main/LICENSE`);
+  - odniesienia „patrz wyżej / sekcja wyżej / tabela wyżej" (README ~104–110,
+    156, 184) rozbite między `uwierzytelnianie.md` / `narzedzia.md` /
+    `konfiguracja.md` → zamienić na **linki między stronami**.
+- `uv run --extra docs mkdocs serve` — lokalny podgląd renderuje się poprawnie
+  (paleta, zakładki, snippety, nawigacja).
+- **`uv.lock`** przegenerowany i zacommitowany (§6); `git status` czysty.
+- **`.gitignore`** zawiera `site/` (patrz §10).
 - CI: workflow `docs.yml` zielony; po merge do `main` strona pod
   `https://iplweb.github.io/bpp-mcp/`.
-- README: `mkdocs`/`ruff` nie dotyczą; sprawdzić ręcznie, że linki i badge działają.
+- README: sprawdzić ręcznie, że linki i badge działają; linki zewnętrzne (do docs
+  klientów) zweryfikowane przez agentów researchowych 2026-07-24.
 
-## 10. Kroki ręczne
+## 10. Kroki ręczne / repo
 
 - **GitHub Pages** — *Settings → Pages → Source: GitHub Actions* — **zrobione
   przez użytkownika** ✅.
+- **`.gitignore`** — dodać `site/` (MkDocs pisze tam wynik builda/serve).
 
 ## 11. Poza zakresem (YAGNI)
 
