@@ -1,0 +1,61 @@
+{
+  "manifest_version": "0.4",
+  "name": "bpp-mcp",
+  "display_name": "BPP — Bibliografia Publikacji Pracowników",
+  "version": "0.1.1",
+  "description": "Serwer MCP dla API BPP (Bibliografia Publikacji Pracowników)",
+  "long_description": "Odpytuje REST API dowolnej instancji BPP: publikacje, autorzy, jednostki, źródła i słowniki, ze stronicowaniem i podążaniem za hiperłączami.\n\nAdres instancji trzeba podać niżej — nie ma wartości domyślnej celowo. Każde wdrożenie BPP to inna uczelnia i inna bibliografia, więc zaszyty host oznaczałby ciche pokazywanie cudzych danych jako własnych.",
+  "author": {
+    "name": "IPLWeb / Michał Pasternak",
+    "email": "michal.dtz@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iplweb/bpp-mcp"
+  },
+  "homepage": "https://github.com/iplweb/bpp-mcp#readme",
+  "documentation": "https://github.com/iplweb/bpp-mcp#readme",
+  "support": "https://github.com/iplweb/bpp-mcp/issues",
+  "license": "MIT",
+  "keywords": [
+    "bpp",
+    "mcp",
+    "bibliografia",
+    "api",
+    "llm"
+  ],
+  "server": {
+    "type": "uv",
+    "entry_point": "mcpb/launch.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "mcpb/launch.py"],
+      "env": {
+        "BPP_BASE_URL": "${user_config.base_url}",
+        "BPP_BASIC_AUTH": "${user_config.basic_auth}"
+      }
+    }
+  },
+  "user_config": {
+    "base_url": {
+      "type": "string",
+      "title": "Adres instancji BPP",
+      "description": "Bazowy URL, np. https://bpp.umlub.pl — bez tego serwer nie wystartuje.",
+      "required": true
+    },
+    "basic_auth": {
+      "type": "string",
+      "title": "HTTP Basic Auth (opcjonalnie)",
+      "description": "Format user:pass. Potrzebne wyłącznie do raportów slotów — rdzeń API v1 jest anonimowy. Zostaw puste, jeśli nie wiesz, czy tego potrzebujesz.",
+      "required": false,
+      "default": "",
+      "sensitive": true
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}

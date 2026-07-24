@@ -5,6 +5,16 @@
 [![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
 [![docs](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml)
 
+[![Zainstaluj w Claude Desktop](https://img.shields.io/badge/Zainstaluj_w-Claude_Desktop-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://github.com/iplweb/bpp-mcp/releases/latest/download/bpp-mcp.mcpb)
+[![Zainstaluj w Cursor](https://img.shields.io/badge/Zainstaluj_w-Cursor-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/en/install-mcp?name=bpp-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJicHAtbWNwIl0sImVudiI6eyJCUFBfQkFTRV9VUkwiOiIifX0=)
+[![Zainstaluj w VS Code](https://img.shields.io/badge/Zainstaluj_w-VS_Code-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?%7B%22name%22%3A%22bpp-mcp%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22bpp-mcp%22%5D%2C%22env%22%3A%7B%22BPP_BASE_URL%22%3A%22%22%7D%7D)
+
+> Instalator Claude Desktop pyta o adres instancji BPP. Linki do Cursora i VS
+> Code niosą `BPP_BASE_URL` puste celowo — wpisz własny adres (np.
+> `https://bpp.umlub.pl`). Bez niego serwer nie wystartuje, i tak ma być: każde
+> wdrożenie BPP to inna uczelnia, więc zaszyty host pokazywałby po cichu cudzą
+> bibliografię jako własną.
+
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP**
 ([Bibliografia Publikacji Pracowników](https://bpp.iplweb.pl)). Wystawia
 read-only, anonimowe API BPP (`/api/v1/`) jako
