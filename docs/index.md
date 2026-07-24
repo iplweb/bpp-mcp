@@ -2,7 +2,7 @@
 
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP** (Bibliografia
 Publikacji Pracowników). Wystawia read-only, anonimowe API BPP (`/api/v1/`) jako
-zestaw kuratorowanych, typowanych narzędzi dla Claude Desktop, Claude Code,
+zestaw starannie dobranych, typowanych narzędzi dla Claude Desktop, Claude Code,
 ChatGPT i innych klientów MCP.
 
 Zamiast żmudnego chodzenia po hyperlinkach REST-owych (publikacja → autorzy →
