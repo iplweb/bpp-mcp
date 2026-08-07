@@ -8,9 +8,10 @@ def test_konwencjonalne_zawiera_revoke():
 
 def test_metadata_issuer_self_endpointy_bpp():
     doc = authorization_server_metadata("https://bpp.test", "http://127.0.0.1:8000")
-    # issuer znormalizowany przez AnyHttpUrl DOKŁADNIE jak w PRM (AuthSettings),
-    # by RFC 8414 §3.3 (issuer == adres pobrania) trzymał się bajt w bajt.
-    assert doc["issuer"] == "http://127.0.0.1:8000/"
+    # Funkcja wypisuje issuer DOSŁOWNIE — normalizacja należy wyłącznie do
+    # AuthSettings w build_mcp, żeby PRM i dokument AS nie mogły się rozjechać
+    # (RFC 8414 §3.3: issuer == adres pobrania, porównywany bajt w bajt).
+    assert doc["issuer"] == "http://127.0.0.1:8000"
     assert doc["authorization_endpoint"] == "https://bpp.test/o/authorize/"
     assert doc["token_endpoint"] == "https://bpp.test/o/token/"
     assert doc["registration_endpoint"] == "https://bpp.test/o/register/"

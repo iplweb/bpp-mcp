@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "bpp-mcp",
   "display_name": "BPP — Bibliografia Publikacji Pracowników",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Serwer MCP dla API BPP (Bibliografia Publikacji Pracowników)",
   "long_description": "Odpytuje REST API dowolnej instancji BPP: publikacje, autorzy, jednostki, źródła i słowniki, ze stronicowaniem i podążaniem za hiperłączami.\n\nAdres instancji trzeba podać niżej — nie ma wartości domyślnej celowo. Każde wdrożenie BPP to inna uczelnia i inna bibliografia, więc zaszyty host oznaczałby ciche pokazywanie cudzych danych jako własnych.",
   "author": {

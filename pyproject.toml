@@ -1,6 +1,6 @@
 [project]
 name = "bpp-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Serwer MCP dla API BPP (Bibliografia Publikacji Pracowników)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,13 +19,25 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-# Górna granica na `mcp` jest konieczna: 2.0.0 usunęło `mcp.server.fastmcp`
-# (FastMCP → `mcp.server.mcpserver.MCPServer`), na którym stoi cały
-# `bpp_mcp.server`. Bez `<2` resolver u użytkownika (uvx) ciągnie 2.0.0
-# i pakiet wywala się na imporcie. Zdejmij dopiero po porcie na MCPServer.
+# Górna granica na `mcp` zostaje po porcie na 2.0 — zmienia się tylko numer.
+# Lekcja z 0.1.1: `mcp` skasowało cały `mcp.server.fastmcp` w wydaniu głównym,
+# a niezwiązany specyfikator wpuścił je użytkownikom `uvx` przy zielonym repo.
+# Sufit podnosimy ręcznie, po porcie — `test-newest-deps` jest informacyjny
+# (`continue-on-error`), więc nie zatrzyma wydania, a canary chodzi raz
+# w tygodniu i JUŻ PO publikacji. Żadne z nich nie jest bramką.
+#
+# `mcp` bez extra `[cli]`: mamy własny argparse i CLI z SDK nie używamy,
+# a extra ciągnie `typer` + `python-dotenv` bez powodu.
+#
+# `starlette` deklarowane jawnie, bo importujemy je wprost (`JSONResponse`
+# w trasie metadanych AS). Dziś przychodzi tranzytywnie z `mcp`, ale to nie
+# jest kontrakt — dokładnie tak straciliśmy `httpx`, gdy SDK przeszło
+# na `httpx2`. `pydantic` świadomie NIE jest tu wymieniony: po zdjęciu
+# zdublowanej normalizacji issuera nie importujemy go już nigdzie wprost.
 dependencies = [
-    "mcp[cli]>=1.28.0,<2",
+    "mcp>=2,<3",
     "httpx>=0.27",
+    "starlette>=0.27",
 ]
 
 [project.urls]

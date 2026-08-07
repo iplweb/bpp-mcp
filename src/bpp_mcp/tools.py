@@ -1,8 +1,8 @@
-"""Logika siedmiu narzędzi MCP — czyste funkcje async przyjmujące
+"""Logika narzędzi MCP — czyste funkcje async przyjmujące
 :class:`~bpp_mcp.client.BppClient` jako pierwszy argument.
 
-Oddzielenie logiki od rejestracji FastMCP (w :mod:`bpp_mcp.server`) pozwala
-testować narzędzia bezpośrednio pod respx, bez stawiania serwera.
+Oddzielenie logiki od rejestracji na MCPServer (w :mod:`bpp_mcp.server`)
+pozwala testować narzędzia bezpośrednio pod respx, bez stawiania serwera.
 """
 
 from __future__ import annotations
