@@ -19,8 +19,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
+# Górna granica na `mcp` jest konieczna: 2.0.0 usunęło `mcp.server.fastmcp`
+# (FastMCP → `mcp.server.mcpserver.MCPServer`), na którym stoi cały
+# `bpp_mcp.server`. Bez `<2` resolver u użytkownika (uvx) ciągnie 2.0.0
+# i pakiet wywala się na imporcie. Zdejmij dopiero po porcie na MCPServer.
 dependencies = [
-    "mcp[cli]>=1.28.0",
+    "mcp[cli]>=1.28.0,<2",
     "httpx>=0.27",
 ]
 

@@ -39,3 +39,31 @@ jobs:
 
       - name: Pytest
         run: uv run pytest -q
+
+  # `test` idzie po `uv.lock`, więc widzi wyłącznie wersje zamrożone w repo —
+  # i dlatego przepuścił 0.1.1, gdzie `mcp[cli]>=1.28.0` bez górnej granicy
+  # ciągnął u użytkownika `mcp` 2.0.0 bez `mcp.server.fastmcp`. Ten job
+  # rozwiązuje zależności od nowa (`--upgrade`), czyli tak jak resolver
+  # u kogoś instalującego z PyPI — łapie zerwanie API zanim trafi do wydania.
+  test-newest-deps:
+    runs-on: ubuntu-latest
+    # Informacyjny: czerwony tu znaczy „ktoś z góry wydał niekompatybilną
+    # wersję", a nie „ten PR jest zły". Nie blokuje merge'a.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Zainstaluj uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Rozwiąż zależności od nowa (bez uv.lock)
+        run: uv sync --extra dev --upgrade
+
+      - name: Pokaż, co się rozwiązało
+        run: uv pip list
+
+      - name: Pytest
+        run: uv run pytest -q
