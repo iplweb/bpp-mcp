@@ -1,0 +1,99 @@
+name: canary
+
+# Cotygodniowy test dymny NA PACZCE Z PyPI — nie na kodzie z repozytorium.
+#
+# Pozostałe workflow sprawdzają to, co leży w repo, i wyłącznie wtedy, gdy ktoś
+# coś wypchnie. Tymczasem 0.1.1 zepsuło się bez ani jednego commita u nas:
+# `mcp` 2.0.0 usunęło `mcp.server.fastmcp`, a zależność `mcp[cli]>=1.28.0` nie
+# miała górnej granicy, więc `uvx bpp-mcp` zaczęło wywalać się na imporcie
+# u każdego nowego użytkownika. Repo było zielone, a paczka martwa.
+#
+# Ten job odpala `uvx bpp-mcp@latest --help` dokładnie tak, jak zrobi to
+# człowiek z instrukcji w README: świeże rozwiązanie zależności z PyPI,
+# bez `uv.lock`, bez naszego drzewa roboczego. `--refresh` omija cache uv,
+# żeby naprawdę pytać o najnowsze wersje, a nie odtwarzać wczorajsze.
+#
+# Czerwony canary znaczy „opublikowana paczka jest zepsuta w świecie" i jest
+# zawsze warty reakcji — dlatego bez `continue-on-error` i z automatycznym
+# zgłoszeniem issue (maile o nieudanych zadaniach z crona łatwo przeoczyć).
+
+on:
+  schedule:
+    # Poniedziałki 06:17 UTC. Nie o pełnej godzinie, bo wtedy GitHub ma szczyt
+    # i harmonogram potrafi się osunąć o kilkanaście minut.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Najstarszy i najnowszy wspierany Python — na skrajach najłatwiej
+        # o rozjazd w rozwiązywaniu zależności.
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - name: Zainstaluj uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: uvx bpp-mcp@latest --help
+        run: uvx --refresh --python ${{ matrix.python-version }} bpp-mcp@latest --help
+
+      # `--help` kończy się w argparse, więc dotyka tylko czubka drzewa
+      # importów. Osobny import `bpp_mcp.server` przechodzi przez FastMCP,
+      # warstwę auth i budowę narzędzi — czyli tam, gdzie realnie pęka API
+      # zależności.
+      - name: Import bpp_mcp.server + wersje zależności
+        run: |
+          uv run --no-project --refresh --python ${{ matrix.python-version }} \
+            --with bpp-mcp python - <<'PY'
+          import importlib.metadata as m
+
+          import bpp_mcp.server  # noqa: F401  — sam import jest tu testem
+
+          for pakiet in ("bpp-mcp", "mcp", "httpx"):
+              print(f"{pakiet}=={m.version(pakiet)}")
+          print("import bpp_mcp.server OK")
+          PY
+
+  # Osobny job, żeby uprawnienie do pisania po issues nie wisiało nad krokami,
+  # które wykonują świeżo pobrany z sieci kod.
+  zglos:
+    needs: smoke
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      # Bez deduplikacji canary zakładałby nowe issue co tydzień, dopóki
+      # problemu nikt nie ruszy. Zakładamy najwyżej jedno otwarte naraz.
+      - name: Załóż issue, jeśli jeszcze nie ma otwartego
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          otwarte=$(gh issue list --repo "$REPO" --label canary --state open --json number --jq 'length')
+          if [ "$otwarte" != "0" ]; then
+            echo "Jest już otwarte issue canary — nie zakładam kolejnego."
+            exit 0
+          fi
+          gh issue create --repo "$REPO" \
+            --label canary \
+            --title "Canary: opublikowana paczka bpp-mcp nie wstaje" \
+            --body "Cotygodniowy canary nie zdołał uruchomić \`uvx bpp-mcp@latest --help\`.
+
+          Oznacza to, że paczka na PyPI jest zepsuta dla nowych instalacji — najczęściej dlatego, że zależność wydała niekompatybilną wersję, a nasz zakres wersji ją dopuszcza. Dokładnie tak poległo 0.1.1 na \`mcp\` 2.0.0.
+
+          Log: $RUN_URL
+
+          Zamknij to issue po naprawie — canary założy nowe, jeśli problem wróci."
