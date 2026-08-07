@@ -6,6 +6,6 @@ wyszukiwanie publikacji i autorów, pobieranie rozwiniętych rekordów
 publikacji oraz małe słowniki referencyjne.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = ["__version__"]
