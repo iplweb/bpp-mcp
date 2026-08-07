@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
-from pydantic import AnyHttpUrl
 
 from .token_store import TokenSet
 
@@ -105,13 +104,20 @@ def authorization_server_metadata(base_url: str, issuer: str) -> dict:
 
     Kopiuje kontrakt z ``bpp/src/oauth_mcp/views_metadata.py``, by PROXY i
     PASS-THROUGH dawały klientowi identyczny obraz serwera autoryzacji.
+
+    ``issuer`` musi przyjść w postaci JUŻ kanonicznej — takiej, jaką
+    ``AuthSettings`` wystawia w PRM — i jest wypisywany dosłownie. Ta funkcja
+    świadomie NIE normalizuje go sama. Robiła tak wcześniej i przez to istniała
+    druga, niezależna implementacja normalizacji, która musiała dawać wynik
+    bajt w bajt zgodny z SDK (RFC 8414 §3.3). Gdy SDK 2.0 zmieniło swoją —
+    przestało doklejać ukośnik do URL bez ścieżki — obie rozjechały się po
+    cichu. Kanoniczną postać wyznacza teraz wyłącznie ``AuthSettings``
+    w :func:`bpp_mcp.server.build_mcp`, więc rozjazd jest niemożliwy
+    z konstrukcji, a nie dzięki czyjejś pamięci.
     """
     m = _konwencjonalne(base_url)
-    # Normalizacja przez AnyHttpUrl daje formę IDENTYCZNĄ z tą, którą
-    # AuthSettings wystawia w PRM (authorization_servers) — inaczej trailing
-    # slash rozjechałby issuer między PRM a dokumentem AS (RFC 8414 §3.3).
     return {
-        "issuer": str(AnyHttpUrl(issuer)),
+        "issuer": issuer,
         "authorization_endpoint": m.authorization_endpoint,
         "token_endpoint": m.token_endpoint,
         "registration_endpoint": m.registration_endpoint,

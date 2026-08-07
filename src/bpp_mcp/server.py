@@ -1,5 +1,12 @@
-"""Serwer FastMCP: lifespan zakłada współdzielony :class:`BppClient`, a każde
-z siedmiu narzędzi deleguje do czystej logiki w :mod:`bpp_mcp.tools`.
+"""Serwer MCPServer: lifespan zakłada współdzielony :class:`BppClient`, a każde
+z narzędzi deleguje do czystej logiki w :mod:`bpp_mcp.tools`.
+
+Uwaga o czasie życia (SDK 2.0): lifespan jest wchodzony RAZ, przy starcie
+menedżera sesji, a jego wynik dzielą wszystkie sesje i żądania — wcześniej
+wchodził per sesja. Klient BPP i tak był pomyślany jako współdzielony, ale
+izolacja tokenu między równoległymi użytkownikami stoi teraz wyłącznie na
+ContextVarze ustawianym w :func:`_client`; patrz test
+``test_bearer_izolowany_miedzy_rownoleglymi_zadaniami``.
 """
 
 from __future__ import annotations
@@ -13,9 +20,9 @@ from typing import Any
 
 import httpx
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 
-from . import oauth_client, token_store, tools
+from . import __version__, oauth_client, token_store, tools
 from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
 from .client import BppClient
 from .config import BrakKonfiguracji, Config
@@ -276,8 +283,8 @@ def zloz_zapytanie_djangoql(opis: str) -> str:
 # dlatego te narzędzia poprawnie zwracają 401/403 bez ważnego tokenu/uprawnień.
 
 
-def _register(mcp: FastMCP) -> None:
-    """Zarejestruj 11 narzędzi + prompt na danej instancji FastMCP."""
+def _register(mcp: MCPServer) -> None:
+    """Zarejestruj 11 narzędzi + prompt na danej instancji MCPServer."""
     mcp.tool()(szukaj_publikacji)
     mcp.tool()(szukaj_autora)
     mcp.tool()(publikacje_autora)
@@ -302,9 +309,13 @@ def _auth_kwargs(
     config: Config,
     mode: oauth_client.AuthMode = oauth_client.AuthMode.PASSTHROUGH,
 ) -> dict[str, Any]:
-    """Argumenty auth do FastMCP: puste w stdio; w http token_verifier +
-    AuthSettings (RS) + host/port. W PROXY issuer wskazuje na sam bpp-mcp
-    (klient pobierze od nas metadane AS), w PASS-THROUGH — na BPP."""
+    """Argumenty auth do konstruktora MCPServer: puste w stdio; w http
+    token_verifier + AuthSettings (RS). W PROXY issuer wskazuje na sam bpp-mcp
+    (klient pobierze od nas metadane AS), w PASS-THROUGH — na BPP.
+
+    Host i port NIE należą już tutaj: SDK 2.0 wyjęło je z konstruktora, bo ten
+    sam serwer może być uruchomiony na różnych transportach. Przyjmuje je
+    dopiero ``run()`` — patrz :func:`_http_kwargs`."""
     if config.transport != "http":
         return {}
     issuer = (
@@ -319,21 +330,33 @@ def _auth_kwargs(
             resource_server_url=config.effective_resource_url,
             required_scopes=["read"],
         ),
-        "host": config.http_host,
-        "port": config.http_port,
     }
+
+
+def _http_kwargs(config: Config) -> dict[str, Any]:
+    """Argumenty transportu do ``MCPServer.run("streamable-http", ...)``.
+
+    ``host`` musi tu być, nie tylko ``port``: ``run()`` przekazuje go dalej do
+    ``streamable_http_app(host=...)``, skąd bierze się wbudowana ochrona przed
+    DNS-rebinding. Bez niego wygrywa domyślny host SDK i udokumentowana
+    własność bezpieczeństwa (``docs/uwierzytelnianie.md`` — „Bind na inny host
+    wyłącza ochronę") przestałaby po cichu zależeć od naszej konfiguracji.
+
+    Uwaga: ``streamable_http_app()`` przyjmuje ``host``, ale NIE ``port`` —
+    tego słownika nie wolno rozpakować tam, tylko do ``run()``."""
+    return {"host": config.http_host, "port": config.http_port}
 
 
 def build_mcp(
     config: Config,
     mode: oauth_client.AuthMode = oauth_client.AuthMode.PASSTHROUGH,
-) -> FastMCP:
-    """Zbuduj serwer FastMCP. Lifespan zakłada BppClient związany z TYM config
+) -> MCPServer:
+    """Zbuduj serwer MCPServer. Lifespan zakłada BppClient związany z TYM config
     (W2 — nie z env), więc verifier i klient używają tej samej instancji BPP.
     W trybie PROXY (HTTP) dokłada trasę ``/.well-known/oauth-authorization-server``."""
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[KontekstApp]:
+    async def lifespan(_server: MCPServer) -> AsyncIterator[KontekstApp]:
         client = BppClient(config)
         provider = (
             TokenProvider(config.base_url) if config.transport != "http" else None
@@ -343,14 +366,25 @@ def build_mcp(
         finally:
             await client.aclose()
 
-    mcp = FastMCP("bpp-mcp", lifespan=lifespan, **_auth_kwargs(config, mode))
+    auth_kwargs = _auth_kwargs(config, mode)
+    # ``version`` trafia do serverInfo w handshake. SDK 2.0 domyśla tu pustego
+    # stringa (1.x podstawiało wersję SDK, co i tak wprowadzało w błąd —
+    # klient widział wersję biblioteki zamiast naszej).
+    mcp = MCPServer("bpp-mcp", version=__version__, lifespan=lifespan, **auth_kwargs)
     _register(mcp)
     if config.transport == "http" and mode is oauth_client.AuthMode.PROXY:
-        _register_as_metadata_route(mcp, config)
+        # Issuer bierzemy z TEGO SAMEGO obiektu AuthSettings, który zasila PRM.
+        # Wcześniej obie strony normalizowały URL niezależnie i musiały wychodzić
+        # bajt w bajt tak samo (RFC 8414 §3.3: issuer == adres pobrania). SDK 2.0
+        # zmieniło swoją normalizację — przestało doklejać ukośnik do URL bez
+        # ścieżki — i cicho rozjechało dokument AS z PRM, czyli wywracało
+        # „authorize" dokładnie w trybie PROXY, dla którego ten kod powstał.
+        # Jedno źródło zamiast dwóch implementacji trzymanych ręcznie w zgodzie.
+        _register_as_metadata_route(mcp, config, str(auth_kwargs["auth"].issuer_url))
     return mcp
 
 
-def _register_as_metadata_route(mcp: FastMCP, config: Config) -> None:
+def _register_as_metadata_route(mcp: MCPServer, config: Config, issuer: str) -> None:
     """PROXY: wystaw metadane serwera autoryzacji (RFC 8414) pod adresem
     bpp-mcp, wskazując endpointy na ``BPP/o/*``. Dla instancji bez #21, gdzie
     ``BPP/.well-known/`` oddaje 403.
@@ -366,9 +400,7 @@ def _register_as_metadata_route(mcp: FastMCP, config: Config) -> None:
     @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])
     async def _as_metadata(_request: Request) -> JSONResponse:
         return JSONResponse(
-            oauth_client.authorization_server_metadata(
-                config.base_url, config.effective_issuer_url
-            ),
+            oauth_client.authorization_server_metadata(config.base_url, issuer),
             headers={"Access-Control-Allow-Origin": "*"},
         )
 
@@ -444,7 +476,7 @@ def main() -> None:
             f".well-known — {'#21 wdrożony' if gotowa else 'proxy przez bpp-mcp'})",
             file=sys.stderr,
         )
-        build_mcp(config, mode).run(transport="streamable-http")
+        build_mcp(config, mode).run(transport="streamable-http", **_http_kwargs(config))
     else:
         mcp.run()
 

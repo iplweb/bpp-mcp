@@ -47,7 +47,7 @@ jobs:
         run: uvx --refresh --python ${{ matrix.python-version }} bpp-mcp@latest --help
 
       # `--help` kończy się w argparse, więc dotyka tylko czubka drzewa
-      # importów. Osobny import `bpp_mcp.server` przechodzi przez FastMCP,
+      # importów. Osobny import `bpp_mcp.server` przechodzi przez MCPServer,
       # warstwę auth i budowę narzędzi — czyli tam, gdzie realnie pęka API
       # zależności.
       - name: Import bpp_mcp.server + wersje zależności
@@ -58,7 +58,10 @@ jobs:
 
           import bpp_mcp.server  # noqa: F401  — sam import jest tu testem
 
-          for pakiet in ("bpp-mcp", "mcp", "httpx"):
+          # `httpx` to NASZ klient BPP, `httpx2` — stos HTTP wewnątrz SDK 2.0.
+          # Oba są w środowisku obok siebie i przy awarii trzeba wiedzieć,
+          # która strona się ruszyła.
+          for pakiet in ("bpp-mcp", "mcp", "httpx", "httpx2"):
               print(f"{pakiet}=={m.version(pakiet)}")
           print("import bpp_mcp.server OK")
           PY
