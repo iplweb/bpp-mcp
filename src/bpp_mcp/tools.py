@@ -22,10 +22,12 @@ from .catalog import (
 )
 from .client import BppClient, BppError, BppNotFound
 
-# Twardy górny sufit ``limit`` dla narzędzi listujących/wyszukujących. BPP nie
-# deklaruje ``max_limit`` po stronie DRF, więc bez tego clampa ``limit=1_000_000``
-# poszłoby wprost do paginacji i mogłoby zdmuchnąć instancję. Paginacja i tak
-# stronicuje porcjami (``PAGE_LIMIT``), ten sufit ogranicza łączną liczbę pozycji.
+# Twardy górny sufit ``limit`` dla narzędzi listujących/wyszukujących. Sufit BPP
+# (``api_v1.pagination.BppLimitOffsetPagination``, ``MAKS_LIMIT = 500``) ogranicza
+# tylko POJEDYNCZĄ stronę, nie łączną liczbę pozycji: bez tego clampa
+# ``limit=1_000_000`` kazałby auto-followowi przewinąć paginację przez cały zbiór
+# i mogłoby to zdmuchnąć instancję. Paginacja stronicuje porcjami
+# (``PAGE_LIMIT``), a ten sufit ogranicza łączną liczbę zebranych pozycji.
 MAKS_LIMIT = 200
 MAKS_LIMIT_RECENT = 100
 

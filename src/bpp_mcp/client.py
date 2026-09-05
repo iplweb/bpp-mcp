@@ -34,8 +34,13 @@ from .auth import current_bearer
 from .catalog import PREFIKSY_CACHOWALNE
 
 # Rozmiar pojedynczej strony przy auto-follow paginacji. Stronicujemy porcjami
-# zamiast żądać całego ``limit`` jednym requestem — chroni instancję BPP przed
-# skrajnie dużym ``?limit=`` (BPP nie deklaruje ``max_limit`` po stronie DRF).
+# zamiast żądać całego ``limit`` jednym requestem — pojedyncze żądanie zostaje
+# małe niezależnie od tego, ile pozycji zamówiło narzędzie. BPP deklaruje własny
+# sufit po stronie DRF (``api_v1.pagination.BppLimitOffsetPagination``,
+# ``MAKS_LIMIT = 500``), ale jest to CICHY clamp: większe ``?limit=`` nie jest
+# błędem — serwer oddaje 200 z 500 pozycjami i ``next``. Nie zwalnia nas to więc
+# ze stronicowania, tym bardziej że ten klient łączy się z dowolną instancją
+# BPP, a te bywają w różnych wersjach (starsze cap-a nie mają wcale).
 PAGE_LIMIT = 50
 
 
