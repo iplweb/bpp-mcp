@@ -25,7 +25,11 @@ from .login_state import TokenProvider
 @dataclass
 class KontekstApp:
     """Zawartość lifespan-context serwera — współdzielony klient HTTP oraz
-    (w trybie stdio) provider tokenu OAuth z lokalnego cache."""
+    (w trybie stdio) provider tokenu OAuth z lokalnego cache.
+
+    Publiczne, bo to kontrakt lifespanu: host wołający :func:`register_tools`
+    na własnej instancji FastMCP musi oddać z lifespanu właśnie taki obiekt —
+    wrappery narzędzi czytają z niego ``client`` przy każdym wywołaniu."""
 
     client: BppClient
     bearer_provider: TokenProvider | None = None
@@ -276,8 +280,29 @@ def zloz_zapytanie_djangoql(opis: str) -> str:
 # dlatego te narzędzia poprawnie zwracają 401/403 bez ważnego tokenu/uprawnień.
 
 
-def _register(mcp: FastMCP) -> None:
-    """Zarejestruj 11 narzędzi + prompt na danej instancji FastMCP."""
+def register_tools(mcp: FastMCP) -> None:
+    """Zarejestruj 11 narzędzi + prompt na danej instancji FastMCP.
+
+    Publiczny szew dla hostów, które budują FastMCP po swojemu (własny
+    lifespan, ``stateless_http=True``, montaż w istniejącej aplikacji ASGI) —
+    zamiast kopiować wrappery narzędzi, wołają to na SWOJEJ instancji.
+
+    Kontrakt, który host musi spełnić: lifespan przekazany do ``FastMCP`` ma
+    oddawać :class:`KontekstApp` (albo obiekt o tych samych atrybutach), bo
+    wrappery sięgają po klienta przez ``ctx.request_context.lifespan_context``:
+
+    * ``client`` — :class:`~bpp_mcp.client.BppClient` (WYMAGANE); to on decyduje,
+      dokąd i z jakim uwierzytelnieniem idą żądania. Host w procesie zakłada go
+      z ``transport=httpx.ASGITransport(...)`` i
+      ``tryb_auth=TrybAuth.W_PROCESIE``.
+    * ``bearer_provider`` — :class:`~bpp_mcp.login_state.TokenProvider` albo
+      ``None``. Fallback na token z lokalnego cache ma sens tylko dla stdio;
+      host wielo-użytkownikowy przekazuje ``None``, żeby token jednej osoby nie
+      wyciekł do żądania innej.
+
+    Zamknięcie klienta (``await client.aclose()``) należy do lifespanu hosta —
+    ta funkcja tylko rejestruje narzędzia i niczego nie sprząta.
+    """
     mcp.tool()(szukaj_publikacji)
     mcp.tool()(szukaj_autora)
     mcp.tool()(publikacje_autora)
@@ -296,6 +321,12 @@ def _register(mcp: FastMCP) -> None:
             "podstawie opisu po polsku — do wklejenia w edytor „zapytanie” BPP."
         ),
     )(zloz_zapytanie_djangoql)
+
+
+# Nazwa sprzed upublicznienia szwu. Trzymamy alias, bo nie wiadomo, kto już
+# sięgnął po prywatną funkcję (pakiet jest na PyPI) — usunięcie jej byłoby
+# zerwaniem kompatybilności bez powodu.
+_register = register_tools
 
 
 def _auth_kwargs(
@@ -344,7 +375,7 @@ def build_mcp(
             await client.aclose()
 
     mcp = FastMCP("bpp-mcp", lifespan=lifespan, **_auth_kwargs(config, mode))
-    _register(mcp)
+    register_tools(mcp)
     if config.transport == "http" and mode is oauth_client.AuthMode.PROXY:
         _register_as_metadata_route(mcp, config)
     return mcp
