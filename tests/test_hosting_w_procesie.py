@@ -13,7 +13,7 @@ import pytest
 import respx
 from mcp.server.fastmcp import FastMCP
 
-from bpp_mcp import auth
+from bpp_mcp import auth, tools
 from bpp_mcp.client import BppClient, BppError, TrybAuth
 from bpp_mcp.config import Config
 from bpp_mcp.server import _register, register_tools
@@ -180,3 +180,34 @@ def test_szwy_hostowania_reeksportowane_z_pakietu():
 
     assert bpp_mcp.register_tools is register_tools
     assert "register_tools" in bpp_mcp.__all__ and "KontekstApp" in bpp_mcp.__all__
+
+
+# --- F. podpowiedź logowania idzie za trybem, nie za nazwą transportu -------
+
+
+@respx.mock
+async def test_401_w_procesie_nie_podpowiada_lokalnego_cli():
+    """Host wystawiający ``/mcp`` buduje ``Config`` z ``transport="stdio"`` (bo
+    nie chce trybu OAuth-RS pakietu), ale jego użytkownicy siedzą po drugiej
+    stronie sieci i żadnego ``bpp-mcp login`` uruchomić nie mogą. Podpowiedź
+    musi więc iść za :class:`TrybAuth`, a nie za nazwą transportu."""
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+    async with BppClient(_cfg(), tryb_auth=TrybAuth.W_PROCESIE, backoff_base=0.0) as c:
+        with pytest.raises(BppError) as ei:
+            await tools.zapytanie_rekord(c, "rok = 2026")
+    assert ei.value.status_code == 401
+    assert "bpp-mcp login" not in str(ei.value)
+
+
+@respx.mock
+async def test_401_lokalny_nadal_podpowiada_cli():
+    """Kontrola pozytywna: dla stdio komunikat zostaje bez zmian."""
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+    async with BppClient(_cfg(), backoff_base=0.0) as c:
+        with pytest.raises(BppError) as ei:
+            await tools.zapytanie_rekord(c, "rok = 2026")
+    assert "bpp-mcp login" in str(ei.value)
