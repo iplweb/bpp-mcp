@@ -260,6 +260,21 @@ class BppClient:
             f"Nie udało się pobrać {full} po {self._max_retries + 1} próbach: {ostatni}"
         ) from ostatni
 
+    def _slownik_cache(self) -> dict[str, Any]:
+        """Zwróć słownik, w którym trzymamy cache ``URL → JSON``.
+
+        Szew do nadpisania w podklasie. Domyślnie jeden słownik na instancję
+        klienta, co jest poprawne dla procesu obsługującego jednego użytkownika
+        i jedną instancję BPP (stdio, ``bpp-mcp --http`` z jednym ``BPP_BASE_URL``).
+
+        Przy hostowaniu w procesie klient żyje w lifespan-kontekście FastMCP,
+        czyli jest WSPÓŁDZIELONY przez cały proces — a klucz cache to sam URL.
+        Jeden słownik obsługiwałby wtedy wszystkich użytkowników i (w instalacji
+        wielo-tenantowej) wszystkie uczelnie naraz, więc odpowiedź przygotowana
+        dla jednego żądania trafiałaby do następnego. Host podstawia tu słownik
+        o właściwym zasięgu (np. per-żądanie, z ContextVar)."""
+        return self._cache
+
     @staticmethod
     def _prefiks_cachowalny(full: httpx.URL) -> bool:
         """Czy pierwszy segment ścieżki po ``/api/v1/`` jest na białej liście
@@ -291,11 +306,12 @@ class BppClient:
         full = self._full_url(url, params)
         klucz = str(full)
         cachowalne = use_cache and self._prefiks_cachowalny(full)
-        if cachowalne and klucz in self._cache:
-            return self._cache[klucz]
+        cache = self._slownik_cache()
+        if cachowalne and klucz in cache:
+            return cache[klucz]
         dane = await self._request(full, retry_5xx=retry_5xx)
         if cachowalne:
-            self._cache[klucz] = dane
+            cache[klucz] = dane
         return dane
 
     async def get_paginated(
