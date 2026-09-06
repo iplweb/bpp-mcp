@@ -111,12 +111,28 @@ gniazda, bez TLS-a, bez adresu, który trzeba znać. Uwaga — `ASGITransport`
 **ignoruje timeouty** `httpx`, więc sufit czasu odpowiedzi musi zapewnić host.
 Ponawianie też traci sens (nie ma sieci, która by zamigotała): `max_retries=0`.
 
+Drugie zastrzeżenie: `ASGITransport` ma domyślnie `raise_app_exceptions=True`,
+a `BppClient._request` łapie wyłącznie `httpx.HTTPError`. Wyjątek, który
+ucieknie z aplikacji hosta, **przejdzie przez klienta surowy** — jako
+`RuntimeError` czy `DatabaseError`, nie jako `BppError` — i wyląduje
+w tracebacku w wyniku narzędzia. Podaj `raise_app_exceptions=False`, jeśli
+wolisz, żeby błąd aplikacji zamienił się w 500, a więc w `BppNetworkError`
+z czytelnym komunikatem.
+
 **(2) `tryb_auth=TrybAuth.W_PROCESIE`** — bearer bieżącego żądania albo
 anonimowo, **nigdy Basic**. Tryb `ZDALNY` (dotąd wybierany przez
 `transport="http"`) przy braku bearera rzuca, co dla endpointu z dostępem
 publicznym jest złe; tryb `LOKALNY` sięgnąłby po `BPP_BASIC_AUTH`, czyli po
 wspólne konto omijające scope i revoke tokenu. Polityka jest od 0.4.0 rozłączna
-od nazwy transportu — `config.transport` steruje już tylko treścią komunikatów.
+od nazwy transportu: po stronie klienta `config.transport` nie steruje już
+**niczym** — zarówno politykę auth, jak i treść podpowiedzi po 401 niesie
+`tryb_auth`. (Poza klientem `config.transport` nadal wybiera tryb serwera
+w `build_mcp`.)
+
+Podawaj **człon enuma**, nie string. `TrybAuth` ma mixin `str`, więc
+`"w-procesie"` wygląda na równoważne — konstruktor koercjonuje je poprawnie
+i rzuca `ValueError` na nieznanej wartości, ale porównania w środku idą przez
+`is`, więc obchodzenie konstruktora skończyłoby się cichym Basikiem.
 
 **(3) `_slownik_cache()`** to metoda do nadpisania w podklasie. Domyślnie cache
 `URL → JSON` jest jeden na instancję klienta, co jest poprawne, gdy proces

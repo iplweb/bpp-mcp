@@ -135,7 +135,18 @@ class BppClient:
         self._api_root = config.api_root
         self._auth_tuple = config.auth_tuple
         self._transport = config.transport
-        self._tryb_auth = tryb_auth or TrybAuth.z_transportu(config.transport)
+        # KOERCJA, nie samo przypisanie. ``TrybAuth`` ma mixin ``str``, więc host
+        # naturalnie poda tu string (np. z settings Django) — a ``_auth_kwargs``
+        # porównuje przez ``is``, przy którym goły string NIE pasuje do żadnej
+        # gałęzi i wypada na koniec, do Basica. Byłaby to cicha degradacja do
+        # NAJBARDZIEJ permisywnej polityki, dokładnie w kodzie, który ma
+        # pilnować, żeby Basic tam nie trafił. ``TrybAuth(...)`` przyjmuje
+        # poprawną wartość i rzuca ``ValueError`` na nieznanej.
+        self._tryb_auth = (
+            TrybAuth(tryb_auth)
+            if tryb_auth is not None
+            else TrybAuth.z_transportu(config.transport)
+        )
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0),
             headers={"Accept": "application/json"},
@@ -152,8 +163,12 @@ class BppClient:
 
     @property
     def transport(self) -> str:
-        """Tryb transportu (``stdio``/``http``) — steruje hybrydową
-        podpowiedzią logowania w narzędziach zapytań DjangoQL."""
+        """Surowa wartość ``config.transport`` (``stdio``/``http``).
+
+        Niczym już po stronie klienta NIE steruje: politykę uwierzytelniania
+        niesie :attr:`tryb_auth`, a treść podpowiedzi logowania po 401 —
+        również ona (``tools._zapytanie``). Zostaje jako odczyt konfiguracji,
+        bo pakiet jest na PyPI; nowy kod ma sięgać po :attr:`tryb_auth`."""
         return self._transport
 
     async def __aenter__(self) -> BppClient:
@@ -189,8 +204,8 @@ class BppClient:
             return {"headers": {"Authorization": f"Bearer {bearer}"}}
         if self._tryb_auth is TrybAuth.ZDALNY:
             raise BppError(
-                "Brak tokenu OAuth w kontekście żądania (tryb http) — nie "
-                "forwarduję anonimowo ani przez konto serwisowe."
+                "Brak tokenu OAuth w kontekście żądania (TrybAuth.ZDALNY) — "
+                "nie forwarduję anonimowo ani przez konto serwisowe."
             )
         if self._tryb_auth is TrybAuth.W_PROCESIE:
             # Świadomie POMIJAMY Basic: w hostowaniu w procesie byłby wspólnym
@@ -267,8 +282,9 @@ class BppClient:
         klienta, co jest poprawne dla procesu obsługującego jednego użytkownika
         i jedną instancję BPP (stdio, ``bpp-mcp --http`` z jednym ``BPP_BASE_URL``).
 
-        Przy hostowaniu w procesie klient żyje w lifespan-kontekście FastMCP,
-        czyli jest WSPÓŁDZIELONY przez cały proces — a klucz cache to sam URL.
+        Przy hostowaniu w procesie klient żyje w lifespan-kontekście serwera
+        MCP, a w SDK 2.0 lifespan wchodzi RAZ na serwer (nie per sesja), więc
+        jest WSPÓŁDZIELONY przez cały proces — a klucz cache to sam URL.
         Jeden słownik obsługiwałby wtedy wszystkich użytkowników i (w instalacji
         wielo-tenantowej) wszystkie uczelnie naraz, więc odpowiedź przygotowana
         dla jednego żądania trafiałaby do następnego. Host podstawia tu słownik
