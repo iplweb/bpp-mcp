@@ -46,6 +46,12 @@ jobs:
       - name: Zbuduj sdist i wheel
         run: uv build
 
+      # UWAGA: `uvx twine` to ZAWSZE najnowsze twine, a publikacja niżej używa
+      # twine ZBUNDLOWANEGO w przypiętej akcji. Te dwie wersje potrafią się
+      # rozjechać i ten krok NIE jest wtedy bramką — przy v0.4.0 przeszedł na
+      # zielono, po czym akcja odrzuciła to samo koło (`Metadata-Version: 2.5`
+      # nieznane staremu twine). Gdy publikacja pada na walidacji dystrybucji
+      # mimo zielonego kroku tutaj, patrz najpierw na wersję akcji.
       - name: Twine check (README musi się renderować na PyPI)
         run: uvx twine check --strict dist/*
 
@@ -98,5 +104,10 @@ jobs:
           name: dist
           path: dist/
 
+      # v1.14.1 niosła twine < 7, które NIE znało `Metadata-Version: 2.5` — a
+      # takie metadane produkuje bieżący hatchling (1.32). Tag v0.4.0 przeszedł
+      # cały pipeline i wywalił się dopiero na walidacji WEWNĄTRZ tej akcji:
+      # `InvalidDistribution: '2.5' is not a valid metadata version`.
+      # v1.14.2 podbija twine do v7, które metadane 2.5 przyjmuje.
       - name: Opublikuj na PyPI (trusted publishing, OIDC)
-        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
