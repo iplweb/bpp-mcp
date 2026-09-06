@@ -8,6 +8,9 @@ zachowanie sprzed ich wprowadzenia — pakiet jest na PyPI i ma użytkowników.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import httpx
 import pytest
 import respx
@@ -211,3 +214,56 @@ async def test_401_lokalny_nadal_podpowiada_cli():
         with pytest.raises(BppError) as ei:
             await tools.zapytanie_rekord(c, "rok = 2026")
     assert "bpp-mcp login" in str(ei.value)
+
+
+# --- B1. koercja tryb_auth: goły string nie może degradować polityki --------
+
+
+@respx.mock
+async def test_tryb_auth_jako_string_jest_koercjonowany():
+    """``TrybAuth`` ma mixin ``str``, więc host poda tu string równie naturalnie
+    jak człon enuma (np. czytając go z settings). Porównania w ``_auth_kwargs``
+    idą przez ``is``, przy którym goły string nie pasuje do ŻADNEJ gałęzi i
+    wypada na koniec — do Basica. Konstruktor musi więc koercjonować, inaczej
+    najbardziej permisywna polityka włącza się po cichu."""
+    route = respx.get(PING).mock(return_value=httpx.Response(200, json={"ok": 1}))
+    async with BppClient(_cfg(basic="u:p"), tryb_auth="w-procesie") as c:
+        assert c.tryb_auth is TrybAuth.W_PROCESIE
+        await c.get_json("uczelnia/1/")
+    assert "Authorization" not in route.calls.last.request.headers
+
+
+async def test_tryb_auth_jako_string_zdalny_nadal_rzuca():
+    """Ten sam błąd w drugą stronę: ``"http"`` bez koercji przestałby wymuszać
+    bearera i po cichu sięgnął po konto serwisowe."""
+    async with BppClient(_cfg(basic="u:p"), tryb_auth="http") as c:
+        assert c.tryb_auth is TrybAuth.ZDALNY
+        with pytest.raises(BppError):
+            await c.get_json("uczelnia/1/")
+
+
+def test_nieznany_tryb_auth_rzuca_zamiast_degradowac():
+    with pytest.raises(ValueError):
+        BppClient(_cfg(), tryb_auth="bzdura")
+
+
+# --- P5. re-eksport jest naprawdę leniwy ------------------------------------
+
+
+def test_import_pakietu_nie_ciagnie_serwera_ani_sdk():
+    """``__init__`` obiecuje, że ``import bpp_mcp`` nie czyta środowiska ani nie
+    buduje modułowego serwera. Bez tego testu pierwszy „porządkowy" commit
+    dodający ``from .server import ...`` na górze przeszedłby niezauważony."""
+    kod = (
+        "import sys, bpp_mcp;"
+        "assert 'bpp_mcp.server' not in sys.modules, 'server zaimportowany eagerly';"
+        "assert not [m for m in sys.modules if m == 'mcp' or m.startswith('mcp.')],"
+        " 'SDK MCP zaimportowane eagerly';"
+        "from bpp_mcp import register_tools;"
+        "assert 'bpp_mcp.server' in sys.modules, 'leniwy import nie zadziałał';"
+        "assert callable(register_tools)"
+    )
+    wynik = subprocess.run(
+        [sys.executable, "-c", kod], capture_output=True, text=True, check=False
+    )
+    assert wynik.returncode == 0, wynik.stderr
