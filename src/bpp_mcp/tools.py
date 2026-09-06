@@ -20,12 +20,14 @@ from .catalog import (
     rozbij_rekord_url,
     rozbij_tuple_id,
 )
-from .client import BppClient, BppError, BppNotFound
+from .client import BppClient, BppError, BppNotFound, TrybAuth
 
-# Twardy górny sufit ``limit`` dla narzędzi listujących/wyszukujących. BPP nie
-# deklaruje ``max_limit`` po stronie DRF, więc bez tego clampa ``limit=1_000_000``
-# poszłoby wprost do paginacji i mogłoby zdmuchnąć instancję. Paginacja i tak
-# stronicuje porcjami (``PAGE_LIMIT``), ten sufit ogranicza łączną liczbę pozycji.
+# Twardy górny sufit ``limit`` dla narzędzi listujących/wyszukujących. Sufit BPP
+# (``api_v1.pagination.BppLimitOffsetPagination``, ``MAKS_LIMIT = 500``) ogranicza
+# tylko POJEDYNCZĄ stronę, nie łączną liczbę pozycji: bez tego clampa
+# ``limit=1_000_000`` kazałby auto-followowi przewinąć paginację przez cały zbiór
+# i mogłoby to zdmuchnąć instancję. Paginacja stronicuje porcjami
+# (``PAGE_LIMIT``), a ten sufit ogranicza łączną liczbę zebranych pozycji.
 MAKS_LIMIT = 200
 MAKS_LIMIT_RECENT = 100
 
@@ -421,7 +423,13 @@ def _blad_zapytania(exc: BppError, *, stdio: bool = False) -> BppError:
     """Zmapuj kod stanu odpowiedzi endpointu ``zapytanie/*`` na czytelny,
     „naprawialny" komunikat dla agenta. Zwraca NOWY :class:`BppError` dla
     znanych statusów (400/401/403/503); dla nieznanych zwraca ``exc`` bez zmian.
-    W trybie stdio 401 podpowiada jednorazowe ``bpp-mcp login`` (hybryda).
+
+    ``stdio`` steruje wyłącznie treścią podpowiedzi przy 401: tylko tam, gdzie
+    użytkownik siedzi przy tym samym terminalu co serwer, ma sens kazać mu
+    uruchomić ``bpp-mcp login``. Wywołujący wyprowadza tę flagę z
+    :class:`~bpp_mcp.client.TrybAuth`, nie z nazwy transportu — host wystawiający
+    MCP w procesie buduje ``Config`` z dowolnym ``transport``, a lokalnego CLI
+    jego użytkownicy nie mają.
     """
     status = exc.status_code
     if status == 400:
@@ -481,7 +489,8 @@ async def _zapytanie(
         )
     except BppError as exc:
         if exc.status_code in (400, 401, 403, 503):
-            raise _blad_zapytania(exc, stdio=client.transport == "stdio") from exc
+            stdio = client.tryb_auth is TrybAuth.LOKALNY
+            raise _blad_zapytania(exc, stdio=stdio) from exc
         raise
     return {
         "laczna_liczba": laczna,

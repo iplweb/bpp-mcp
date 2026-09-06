@@ -26,6 +26,7 @@ błąd domenowy.
 from __future__ import annotations
 
 import asyncio
+from enum import Enum
 from typing import Any
 
 import httpx
@@ -34,9 +35,52 @@ from .auth import current_bearer
 from .catalog import PREFIKSY_CACHOWALNE
 
 # Rozmiar pojedynczej strony przy auto-follow paginacji. Stronicujemy porcjami
-# zamiast żądać całego ``limit`` jednym requestem — chroni instancję BPP przed
-# skrajnie dużym ``?limit=`` (BPP nie deklaruje ``max_limit`` po stronie DRF).
+# zamiast żądać całego ``limit`` jednym requestem — pojedyncze żądanie zostaje
+# małe niezależnie od tego, ile pozycji zamówiło narzędzie. BPP deklaruje własny
+# sufit po stronie DRF (``api_v1.pagination.BppLimitOffsetPagination``,
+# ``MAKS_LIMIT = 500``), ale jest to CICHY clamp: większe ``?limit=`` nie jest
+# błędem — serwer oddaje 200 z 500 pozycjami i ``next``. Nie zwalnia nas to więc
+# ze stronicowania, tym bardziej że ten klient łączy się z dowolną instancją
+# BPP, a te bywają w różnych wersjach (starsze cap-a nie mają wcale).
 PAGE_LIMIT = 50
+
+
+class TrybAuth(str, Enum):
+    """Polityka uwierzytelniania żądań do API BPP — jawnie, zamiast wnioskowania
+    z nazwy transportu.
+
+    * :attr:`LOKALNY` (stdio) — bearer z kontekstu żądania, a gdy go brak:
+      Basic ze zmiennej ``BPP_BASIC_AUTH`` (jeśli skonfigurowany), a w
+      ostateczności anonimowo. To tryb narzędzia uruchamianego przez samego
+      użytkownika na jego maszynie: konto z Basica jest JEGO kontem.
+    * :attr:`ZDALNY` (http) — WYŁĄCZNIE bearer bieżącego żądania; jego brak to
+      błąd. Serwer obsługuje wielu użytkowników naraz, więc cichy fallback na
+      konto serwisowe albo na anonima oddawałby jednemu użytkownikowi dane
+      wyjęte spod uprawnień kogoś innego.
+    * :attr:`W_PROCESIE` — bearer bieżącego żądania albo anonimowo; Basic jest
+      ZABRONIONY, nawet gdy skonfigurowany.
+
+    Dlaczego :attr:`W_PROCESIE` nie dopuszcza Basica: w tym trybie BPP hostuje
+    endpoint MCP samo i woła własne API w procesie, dla cudzych żądań. Nie ma
+    tam „konta serwisowego" w sensie właściciela danych — Basic byłby kontem
+    JAKIEGOŚ użytkownika, wspólnym dla wszystkich wywołań. Poszedłby więc obok
+    całego toru autoryzacji OAuth: z pominięciem scope'ów przyznanych tokenowi
+    i bez możliwości odebrania dostępu (revoke tokenu nic by nie zmienił, bo
+    request i tak wykonałby się na Basicu). Anonim jest bezpieczny — widzi
+    dokładnie to, co publiczna część bibliografii — więc to on jest fallbackiem.
+    """
+
+    LOKALNY = "stdio"
+    ZDALNY = "http"
+    W_PROCESIE = "w-procesie"
+
+    @classmethod
+    def z_transportu(cls, transport: str) -> TrybAuth:
+        """Wyprowadź tryb z ``config.transport`` — dokładnie tak, jak klient
+        rozstrzygał to przed wprowadzeniem enumeracji: ``http`` → :attr:`ZDALNY`,
+        cokolwiek innego → :attr:`LOKALNY`. Trybu :attr:`W_PROCESIE` nie da się
+        wyprowadzić z konfiguracji; host podaje go jawnie w konstruktorze."""
+        return cls.ZDALNY if transport == "http" else cls.LOKALNY
 
 
 class BppError(Exception):
@@ -73,14 +117,30 @@ class BppClient:
         concurrency: int = 8,
         max_retries: int = 2,
         backoff_base: float = 0.5,
+        transport: httpx.AsyncBaseTransport | None = None,
+        tryb_auth: TrybAuth | None = None,
     ) -> None:
+        """Zbuduj klienta dla instancji opisanej przez ``config``.
+
+        ``transport`` podstawia warstwę transportową ``httpx`` — ``None`` (dom.)
+        zostawia domyślny transport sieciowy. Szew istnieje dla hostowania
+        w procesie: BPP przekazuje tu ``httpx.ASGITransport`` i żądania trafiają
+        wprost do własnej aplikacji Django, bez pętli po sieci (a więc bez
+        drugiego workera, bez TLS-a i bez adresu, który trzeba znać).
+
+        ``tryb_auth`` wybiera politykę uwierzytelniania (:class:`TrybAuth`).
+        ``None`` (dom.) wyprowadza ją z ``config.transport``, czyli odtwarza
+        zachowanie sprzed wprowadzenia enumeracji.
+        """
         self._api_root = config.api_root
         self._auth_tuple = config.auth_tuple
         self._transport = config.transport
+        self._tryb_auth = tryb_auth or TrybAuth.z_transportu(config.transport)
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=5.0),
             headers={"Accept": "application/json"},
             follow_redirects=True,
+            transport=transport,
         )
         self._sem = asyncio.Semaphore(concurrency)
         self._cache: dict[str, Any] = {}
@@ -115,18 +175,27 @@ class BppClient:
                 full = full.copy_merge_params(czyste)
         return full
 
+    @property
+    def tryb_auth(self) -> TrybAuth:
+        """Obowiązująca polityka uwierzytelniania (:class:`TrybAuth`)."""
+        return self._tryb_auth
+
     def _auth_kwargs(self) -> dict[str, Any]:
-        """Per-request auth. Bearer (bieżący request) wygrywa zawsze. W trybie
-        http brak bearera = błąd (żadnego cichego fallbacku na konto serwisowe).
-        W stdio: Basic (gdy skonfigurowany) albo anonimowo."""
+        """Per-request auth wg :class:`TrybAuth`. Bearer bieżącego żądania
+        wygrywa zawsze; reszta zależy od trybu (uzasadnienia — patrz
+        :class:`TrybAuth`)."""
         bearer = current_bearer()
         if bearer:
             return {"headers": {"Authorization": f"Bearer {bearer}"}}
-        if self._transport == "http":
+        if self._tryb_auth is TrybAuth.ZDALNY:
             raise BppError(
                 "Brak tokenu OAuth w kontekście żądania (tryb http) — nie "
                 "forwarduję anonimowo ani przez konto serwisowe."
             )
+        if self._tryb_auth is TrybAuth.W_PROCESIE:
+            # Świadomie POMIJAMY Basic: w hostowaniu w procesie byłby wspólnym
+            # kontem omijającym scope i revoke tokenu. Zostaje anonim.
+            return {}
         if self._auth_tuple:
             return {"auth": self._auth_tuple}
         return {}
@@ -191,6 +260,21 @@ class BppClient:
             f"Nie udało się pobrać {full} po {self._max_retries + 1} próbach: {ostatni}"
         ) from ostatni
 
+    def _slownik_cache(self) -> dict[str, Any]:
+        """Zwróć słownik, w którym trzymamy cache ``URL → JSON``.
+
+        Szew do nadpisania w podklasie. Domyślnie jeden słownik na instancję
+        klienta, co jest poprawne dla procesu obsługującego jednego użytkownika
+        i jedną instancję BPP (stdio, ``bpp-mcp --http`` z jednym ``BPP_BASE_URL``).
+
+        Przy hostowaniu w procesie klient żyje w lifespan-kontekście FastMCP,
+        czyli jest WSPÓŁDZIELONY przez cały proces — a klucz cache to sam URL.
+        Jeden słownik obsługiwałby wtedy wszystkich użytkowników i (w instalacji
+        wielo-tenantowej) wszystkie uczelnie naraz, więc odpowiedź przygotowana
+        dla jednego żądania trafiałaby do następnego. Host podstawia tu słownik
+        o właściwym zasięgu (np. per-żądanie, z ContextVar)."""
+        return self._cache
+
     @staticmethod
     def _prefiks_cachowalny(full: httpx.URL) -> bool:
         """Czy pierwszy segment ścieżki po ``/api/v1/`` jest na białej liście
@@ -222,11 +306,12 @@ class BppClient:
         full = self._full_url(url, params)
         klucz = str(full)
         cachowalne = use_cache and self._prefiks_cachowalny(full)
-        if cachowalne and klucz in self._cache:
-            return self._cache[klucz]
+        cache = self._slownik_cache()
+        if cachowalne and klucz in cache:
+            return cache[klucz]
         dane = await self._request(full, retry_5xx=retry_5xx)
         if cachowalne:
-            self._cache[klucz] = dane
+            cache[klucz] = dane
         return dane
 
     async def get_paginated(
