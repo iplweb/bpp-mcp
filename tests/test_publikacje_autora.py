@@ -40,9 +40,25 @@ async def test_publikacje_autora_happy(client):
     assert "count" not in wynik
     assert wynik["zwrocono"] == 2
     assert len(wynik["publikacje"]) == 2
-    # id "(6, 1)" rozłożone na content_type_id + pk
+    # starsze BPP bez ``rekord_url``: id "(6, 1)" rozłożone na
+    # content_type_id + pk (pk tekstem — jak w szukaj_publikacji)
     assert wynik["publikacje"][0]["content_type_id"] == 6
-    assert wynik["publikacje"][0]["pk"] == 1
+    assert wynik["publikacje"][0]["pk"] == "1"
+    assert "typ" not in wynik["publikacje"][0]
+
+
+async def test_publikacje_autora_ma_typ_i_pk_jak_szukaj(client):
+    """Numer ContentType jest per-instancja, więc sam ``content_type_id`` nie
+    mówi, jaki to typ rekordu. Nowsze BPP dokłada ``rekord_url`` — z niego
+    ``typ`` + ``pk``, ten sam kształt co w ``szukaj_publikacji``, gotowy do
+    ``pobierz_rekord(typ, pk)``."""
+    pub = {**_publikacja(7), "rekord_url": f"{API_ROOT}/wydawnictwo_zwarte/7/"}
+    with respx.mock(base_url=API_ROOT, assert_all_called=False) as mock:
+        mock.get("/recent_author_publications/5/").respond(json=_odpowiedz([pub]))
+        wynik = await tools.publikacje_autora(client, "5")
+    poz = wynik["publikacje"][0]
+    assert poz["typ"] == "wydawnictwo_zwarte"
+    assert poz["pk"] == "7"
 
 
 async def test_publikacje_autora_pusty(client):

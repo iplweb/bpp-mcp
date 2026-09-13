@@ -79,6 +79,18 @@ async def test_zapytanie_rekord_happy(client):
     assert "q=" in str(route.calls[0].request.url)
 
 
+async def test_zapytanie_rekord_ma_typ_i_pk_jak_szukaj(client):
+    """Ten sam kształt pozycji co w ``szukaj_publikacji`` — ``typ`` + ``pk``
+    z ``rekord_url``, gotowe do ``pobierz_rekord(typ, pk)``."""
+    with respx.mock(base_url=API_ROOT, assert_all_called=False) as mock:
+        mock.get("/zapytanie/rekord/").respond(
+            json={"count": 1, "next": None, "results": [_rekord(123)]}
+        )
+        wynik = await tools.zapytanie_rekord(client, "rok = 2023")
+    assert wynik["wyniki"][0]["typ"] == "wydawnictwo_ciagle"
+    assert wynik["wyniki"][0]["pk"] == "123"
+
+
 async def test_zapytanie_autor_happy(client):
     with respx.mock(base_url=API_ROOT, assert_all_called=False) as mock:
         mock.get("/zapytanie/autor/").respond(

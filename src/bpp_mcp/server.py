@@ -83,7 +83,8 @@ async def publikacje_autora(
     rok_do: int | None = None,
     limit: int = 25,
 ) -> dict[str, Any]:
-    """Publiczne publikacje autora (po ID lub slug). Sufit 100 → flaga obcieto."""
+    """Publiczne publikacje autora (po ID lub slug). Sufit 100 → flaga obcieto.
+    Pozycje mają ``typ`` + ``pk`` do ``pobierz_rekord``."""
     return await tools.publikacje_autora(
         await _client(ctx), id_lub_slug, rok_od, rok_do, limit
     )
@@ -96,7 +97,8 @@ async def publikacje_jednostki(
     rok_do: int | None = None,
     limit: int = 25,
 ) -> dict[str, Any]:
-    """Publiczne publikacje jednostki i jej pod-jednostek (po ID lub slug)."""
+    """Publiczne publikacje jednostki i jej pod-jednostek (po ID lub slug).
+    Pozycje mają ``typ`` + ``pk`` do ``pobierz_rekord``."""
     return await tools.publikacje_jednostki(
         await _client(ctx), id_lub_slug, rok_od, rok_do, limit
     )
@@ -110,7 +112,9 @@ async def pobierz_rekord(
 ) -> dict[str, Any]:
     """Pobierz rekord (typ: wydawnictwo_ciagle/wydawnictwo_zwarte/patent/
     praca_doktorska/praca_habilitacyjna) z rozwiniętymi hyperlinkami —
-    autorami, źródłem, streszczeniami — jako jeden zagnieżdżony obiekt."""
+    autorami, źródłem, streszczeniami — jako jeden zagnieżdżony obiekt.
+    ``typ`` i ``id`` (= ``pk``) weź z pozycji szukaj_publikacji,
+    publikacje_autora, publikacje_jednostki albo zapytanie_rekord."""
     return await tools.pobierz_rekord(await _client(ctx), typ, id, pelne_dane_autorow)
 
 
