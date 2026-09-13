@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import ToolAnnotations
 
 from . import __version__, oauth_client, token_store, tools
 from .auth import WhoamiTokenVerifier, bearer_from_request, set_current_bearer
@@ -288,8 +289,37 @@ def zloz_zapytanie_djangoql(opis: str) -> str:
 # dlatego te narzędzia poprawnie zwracają 401/403 bez ważnego tokenu/uprawnień.
 
 
+# Adnotacje MCP wspólne dla WSZYSTKICH narzędzi — każde tylko czyta z BPP.
+# Klient bez ``readOnlyHint: true`` uznaje narzędzie za zapisujące i (ChatGPT
+# w developer mode) każe potwierdzać każde wywołanie.
+#
+# * ``read_only_hint=True`` — żadne narzędzie nie zmienia swojego otoczenia.
+# * ``idempotent_hint=True`` — powtórzone wywołanie niczego dodatkowo nie
+#   zmienia. Spec uznaje to pole za znaczące tylko przy ``read_only_hint``
+#   false; przy odczycie jest prawdziwe z definicji i nie szkodzi.
+# * ``open_world_hint=False`` — narzędzia rozmawiają z JEDNĄ skonfigurowaną
+#   instancją BPP (a ``djangoql_schema`` z danymi pakietu), czyli z domeną
+#   zamkniętą w sensie spec (jak narzędzie pamięci, nie wyszukiwarka WWW).
+#   Domyślnie spec zakłada ``true``, więc pole trzeba ustawić jawnie.
+# * ``destructive_hint`` — celowo NIEUSTAWIONE: spec nadaje mu znaczenie
+#   wyłącznie przy ``read_only_hint`` false.
+#
+# Idą przez argument ``mcp.tool(...)``, a nie przez dopięcie po rejestracji:
+# host (BPP) podmienia ``serwer.tool`` na wrapper przekazujący argumenty dalej,
+# więc tylko ta droga gwarantuje, że adnotacje trafią na jego serwer.
+ADNOTACJE_TYLKO_ODCZYT = ToolAnnotations(
+    read_only_hint=True,
+    idempotent_hint=True,
+    open_world_hint=False,
+)
+
+
 def register_tools(mcp: MCPServer) -> None:
     """Zarejestruj 11 narzędzi + prompt na danej instancji ``MCPServer``.
+
+    Każde narzędzie dostaje :data:`ADNOTACJE_TYLKO_ODCZYT` przez argument
+    ``mcp.tool(annotations=...)`` — host podmieniający ``mcp.tool`` musi
+    przekazać ``**kwargs`` do oryginału, inaczej adnotacje przepadną.
 
     Publiczny szew dla hostów, które budują serwer po swojemu (własny lifespan,
     montaż w istniejącej aplikacji ASGI) — zamiast kopiować wrappery narzędzi,
@@ -312,17 +342,20 @@ def register_tools(mcp: MCPServer) -> None:
     Zamknięcie klienta (``await client.aclose()``) należy do lifespanu hosta —
     ta funkcja tylko rejestruje narzędzia i niczego nie sprząta.
     """
-    mcp.tool()(szukaj_publikacji)
-    mcp.tool()(szukaj_autora)
-    mcp.tool()(publikacje_autora)
-    mcp.tool()(publikacje_jednostki)
-    mcp.tool()(pobierz_rekord)
-    mcp.tool()(lista_publikacji)
-    mcp.tool()(slownik)
-    mcp.tool()(zapytanie_rekord)
-    mcp.tool()(zapytanie_autor)
-    mcp.tool()(zapytanie_autorzy)
-    mcp.tool()(djangoql_schema)
+    for narzedzie in (
+        szukaj_publikacji,
+        szukaj_autora,
+        publikacje_autora,
+        publikacje_jednostki,
+        pobierz_rekord,
+        lista_publikacji,
+        slownik,
+        zapytanie_rekord,
+        zapytanie_autor,
+        zapytanie_autorzy,
+        djangoql_schema,
+    ):
+        mcp.tool(annotations=ADNOTACJE_TYLKO_ODCZYT)(narzedzie)
     mcp.prompt(
         name="zloz_zapytanie_djangoql",
         description=(

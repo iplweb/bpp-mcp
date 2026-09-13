@@ -125,6 +125,14 @@ treść dociera do modelu jako wynik z `is_error`, a nie znika za generycznym
 „Error executing tool”. Host nadal może łapać `except BppError` przed
 `except Exception`.
 
+Od **0.4.2** każde z 11 narzędzi ma adnotacje MCP `readOnlyHint: true`,
+`idempotentHint: true`, `openWorldHint: false` (stała
+`bpp_mcp.server.ADNOTACJE_TYLKO_ODCZYT`). Bez `readOnlyHint` klient uznaje
+narzędzie za zapisujące — ChatGPT w developer mode każe wtedy potwierdzać każde
+wywołanie. `register_tools` przekazuje je argumentem
+`mcp.tool(annotations=...)`, więc host, który podmienia `serwer.tool` na własny
+wrapper, musi przekazać `**kwargs` do oryginału — inaczej adnotacje przepadną.
+
 **(2) `tryb_auth=TrybAuth.W_PROCESIE`** — bearer bieżącego żądania albo
 anonimowo, **nigdy Basic**. Tryb `ZDALNY` (dotąd wybierany przez
 `transport="http"`) przy braku bearera rzuca, co dla endpointu z dostępem
