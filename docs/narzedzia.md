@@ -14,6 +14,11 @@
 | `zapytanie_autorzy(q, limit=25, offset=0)` | **wykonaj** DjangoQL po wpisach autorstwa (`bpp.Autorzy`) — autoryzowane |
 | `djangoql_schema(model="rekord", sekcje=None)` | schemat DjangoQL-dla-LLM: rdzeń `rekord`/`autor`/`autorzy`, sekcje relacyjne na żądanie |
 
+Wszystkie narzędzia są **tylko do odczytu** i od 0.4.2 ogłaszają to klientowi
+adnotacjami MCP (`readOnlyHint: true`, `idempotentHint: true`,
+`openWorldHint: false`) — klienci pytający o zgodę przed narzędziem
+zapisującym (np. ChatGPT) nie muszą potwierdzać każdego wywołania.
+
 !!! warning "Zapytania DjangoQL (`zapytanie_*`) są AUTORYZOWANE"
     Endpointy `/api/v1/zapytanie/{rekord,autor,autorzy}/` wymagają `Bearer` (tryb
     OAuth/HTTP lub logowanie stdio — patrz [Uwierzytelnianie](uwierzytelnianie.md))
