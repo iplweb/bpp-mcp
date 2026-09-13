@@ -5,28 +5,48 @@
 [![tests](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/tests.yml)
 [![docs](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml/badge.svg)](https://github.com/iplweb/bpp-mcp/actions/workflows/docs.yml)
 
-[![Zainstaluj w Claude Desktop](https://img.shields.io/badge/Zainstaluj_w-Claude_Desktop-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://github.com/iplweb/bpp-mcp/releases/latest/download/bpp-mcp.mcpb)
-[![Zainstaluj w Cursor](https://img.shields.io/badge/Zainstaluj_w-Cursor-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/en/install-mcp?name=bpp-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJicHAtbWNwIl0sImVudiI6eyJCUFBfQkFTRV9VUkwiOiIifX0=)
-[![Zainstaluj w VS Code](https://img.shields.io/badge/Zainstaluj_w-VS_Code-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?%7B%22name%22%3A%22bpp-mcp%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22bpp-mcp%22%5D%2C%22env%22%3A%7B%22BPP_BASE_URL%22%3A%22%22%7D%7D)
-
-> Instalator Claude Desktop pyta o adres instancji BPP. Linki do Cursora i VS
-> Code niosą `BPP_BASE_URL` puste celowo — wpisz własny adres (np.
-> `https://bpp.umlub.pl`). Bez niego serwer nie wystartuje, i tak ma być: każde
-> wdrożenie BPP to inna uczelnia, więc zaszyty host pokazywałby po cichu cudzą
-> bibliografię jako własną.
+> ⚠️ **W większości przypadków nie potrzebujesz tego pakietu.** Aktualne wersje BPP
+> mają serwer MCP **wbudowany** — nic nie instalujesz, tylko dopisujesz `/mcp`
+> do adresu swojej bibliografii:
+>
+> - `https://bpp.twoja-uczelnia.pl/mcp` — dostęp publiczny, bez logowania;
+>   działa z każdym klientem obsługującym zdalne serwery MCP,
+> - `https://bpp.twoja-uczelnia.pl/mcp/auth` — z logowaniem kontem BPP, także
+>   do danych niepublicznych.
+>
+> Otwórz `/mcp` w przeglądarce — znajdziesz tam gotową instrukcję podłączenia
+> asystenta AI. Opis: **[bpp.iplweb.pl/bpp-ai](https://bpp.iplweb.pl/bpp-ai)**.
 
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP**
-([Bibliografia Publikacji Pracowników](https://bpp.iplweb.pl)). Wystawia
-read-only, anonimowe API BPP (`/api/v1/`) jako
+([Bibliografia Publikacji Pracowników](https://bpp.iplweb.pl)) jako osobny
+program, uruchamiany na Twoim komputerze. Wystawia API BPP (`/api/v1/`) jako
 zestaw starannie dobranych, typowanych narzędzi dla Claude Desktop, Claude Code,
-ChatGPT i innych klientów MCP. Dokumentacja online:
-**[iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**.
+ChatGPT i innych klientów MCP — ten sam zestaw, który jest pod adresem `/mcp`.
+Dokumentacja online: **[iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**.
 
 Zamiast żmudnego chodzenia po hyperlinkach REST-owych (publikacja → autorzy →
 jednostka → …), serwer robi to za agenta: rozwija relacje, auto-follow-uje
 paginację i zwraca gotowe, zagnieżdżone obiekty. `pobierz_rekord` zwraca jeden
 obiekt z rozwiniętymi autorami (nazwisko jak wydrukowane), źródłem i
 streszczeniami — zamiast kilkunastu żądań REST.
+
+## Kiedy sięgnąć po bpp-mcp
+
+Samodzielny `bpp-mcp` ma sens tylko wtedy, gdy wbudowany serwer `/mcp` Ci nie
+wystarcza:
+
+- **Twoja instalacja BPP nie ma jeszcze adresu `/mcp`.** `bpp-mcp` łączy się
+  z bibliografią przez jej API, więc zadziała także na starszych wersjach.
+- **Potrzebujesz najnowszych narzędzi od razu.** Nowe funkcje trafiają najpierw
+  do `bpp-mcp`, a do serwera wbudowanego w BPP — z kolejnym wydaniem systemu.
+- **Twój klient nie obsługuje zdalnych serwerów MCP.** Część programów
+  uruchamia serwery MCP wyłącznie lokalnie (stdio) — `bpp-mcp` działa właśnie
+  tak.
+- **Rozwijasz lub testujesz narzędzia MCP dla BPP** lokalnie, zanim trafią do
+  systemu.
+
+Jeśli żaden z tych punktów Cię nie dotyczy — użyj `/mcp` i pomiń resztę tego
+dokumentu.
 
 ## 📖 Dokumentacja
 
@@ -36,6 +56,16 @@ klientów MCP, narzędzia, DjangoQL):
 **→ [iplweb.github.io/bpp-mcp](https://iplweb.github.io/bpp-mcp/)**
 
 ## Szybki start
+
+[![Zainstaluj w Claude Desktop](https://img.shields.io/badge/Zainstaluj_w-Claude_Desktop-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://github.com/iplweb/bpp-mcp/releases/latest/download/bpp-mcp.mcpb)
+[![Zainstaluj w Cursor](https://img.shields.io/badge/Zainstaluj_w-Cursor-000000?style=for-the-badge&logo=cursor&logoColor=white)](https://cursor.com/en/install-mcp?name=bpp-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJicHAtbWNwIl0sImVudiI6eyJCUFBfQkFTRV9VUkwiOiIifX0=)
+[![Zainstaluj w VS Code](https://img.shields.io/badge/Zainstaluj_w-VS_Code-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?%7B%22name%22%3A%22bpp-mcp%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22bpp-mcp%22%5D%2C%22env%22%3A%7B%22BPP_BASE_URL%22%3A%22%22%7D%7D)
+
+> Instalator Claude Desktop pyta o adres instancji BPP. Linki do Cursora i VS
+> Code niosą `BPP_BASE_URL` puste celowo — wpisz własny adres (np.
+> `https://bpp.umlub.pl`). Bez niego serwer nie wystartuje, i tak ma być: każde
+> wdrożenie BPP to inna uczelnia, więc zaszyty host pokazywałby po cichu cudzą
+> bibliografię jako własną.
 
 `bpp-mcp` to serwer MCP działający po stdio — **nie uruchamiasz go samodzielnie**
 w terminalu (odpalony ręcznie tylko czeka w ciszy na klienta na standardowym
@@ -75,9 +105,10 @@ w sekcji **Demo** niżej.
 
 ## Demo — przykładowe zapytania
 
-Podłączony do asystenta AI, serwer pozwala pytać o dane BPP zwykłym zdaniem — bez
-znajomości struktury bazy i bez jednego eksportu do arkusza. Dwa przykłady wraz
-z odpowiedziami, jakie zwraca asystent:
+Podłączony do asystenta AI — przez wbudowany adres `/mcp` albo przez `bpp-mcp` —
+serwer pozwala pytać o dane BPP zwykłym zdaniem, bez znajomości struktury bazy
+i bez jednego eksportu do arkusza. Dwa przykłady wraz z odpowiedziami, jakie
+zwraca asystent:
 
 > **Przygotuj sylwetkę naukową prof. [Nazwisko]** na podstawie całego dorobku
 > w BPP: obszary badań, najważniejsze publikacje, główne czasopisma, dynamikę
