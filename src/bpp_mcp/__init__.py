@@ -8,7 +8,7 @@ publikacji oraz małe słowniki referencyjne.
 
 from typing import Any
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 __all__ = ["KontekstApp", "__version__", "register_tools"]
 
