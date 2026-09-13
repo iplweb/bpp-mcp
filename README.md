@@ -16,6 +16,13 @@
 >
 > Otwórz `/mcp` w przeglądarce — znajdziesz tam gotową instrukcję podłączenia
 > asystenta AI. Opis: **[bpp.iplweb.pl/bpp-ai](https://bpp.iplweb.pl/bpp-ai)**.
+>
+> **Wyjątek: BPP niedostępne z internetu.** Jeśli Twoja uczelnia nie udostępnia
+> BPP na zewnątrz (tylko sieć wewnętrzna / VPN), adres `/mcp` nic Ci nie da —
+> asystenci AI (claude.ai, Claude Desktop, ChatGPT) łączą się z serwerem MCP
+> z internetu i do Twojej bibliografii nie dotrą. Wtedy użyj właśnie `bpp-mcp`:
+> działa na Twoim komputerze i łączy się z BPP stamtąd, gdzie Ty masz do niego
+> dostęp.
 
 Serwer [MCP](https://modelcontextprotocol.io) dla **API BPP**
 ([Bibliografia Publikacji Pracowników](https://bpp.iplweb.pl)) jako osobny
@@ -35,6 +42,10 @@ streszczeniami — zamiast kilkunastu żądań REST.
 Samodzielny `bpp-mcp` ma sens tylko wtedy, gdy wbudowany serwer `/mcp` Ci nie
 wystarcza:
 
+- **Twoje BPP nie jest dostępne z internetu.** Wbudowany `/mcp` wymaga, by
+  asystent AI mógł połączyć się z serwerem BPP z zewnątrz. Gdy bibliografia
+  działa tylko w sieci uczelni (albo przez VPN), `bpp-mcp` jest jedyną drogą:
+  uruchamia się na Twoim komputerze, a z BPP łączy się z Twojej sieci.
 - **Twoja instalacja BPP nie ma jeszcze adresu `/mcp`.** `bpp-mcp` łączy się
   z bibliografią przez jej API, więc zadziała także na starszych wersjach.
 - **Potrzebujesz najnowszych narzędzi od razu.** Nowe funkcje trafiają najpierw
