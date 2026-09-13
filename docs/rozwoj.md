@@ -114,10 +114,16 @@ Ponawianie też traci sens (nie ma sieci, która by zamigotała): `max_retries=0
 Drugie zastrzeżenie: `ASGITransport` ma domyślnie `raise_app_exceptions=True`,
 a `BppClient._request` łapie wyłącznie `httpx.HTTPError`. Wyjątek, który
 ucieknie z aplikacji hosta, **przejdzie przez klienta surowy** — jako
-`RuntimeError` czy `DatabaseError`, nie jako `BppError` — i wyląduje
-w tracebacku w wyniku narzędzia. Podaj `raise_app_exceptions=False`, jeśli
-wolisz, żeby błąd aplikacji zamienił się w 500, a więc w `BppNetworkError`
-z czytelnym komunikatem.
+`RuntimeError` czy `DatabaseError`, nie jako `BppError`. Od `mcp` 2.1 SDK
+traktuje taki wyjątek jak awarię: model dostaje samo „Error executing tool
+<nazwa>”, a traceback trafia do logu serwera. Podaj
+`raise_app_exceptions=False`, jeśli wolisz, żeby błąd aplikacji zamienił się
+w 500, a więc w `BppNetworkError` z czytelnym komunikatem.
+
+`BppError` (od **0.4.1**) dziedziczy po `ToolError` z SDK — dzięki temu jego
+treść dociera do modelu jako wynik z `is_error`, a nie znika za generycznym
+„Error executing tool”. Host nadal może łapać `except BppError` przed
+`except Exception`.
 
 **(2) `tryb_auth=TrybAuth.W_PROCESIE`** — bearer bieżącego żądania albo
 anonimowo, **nigdy Basic**. Tryb `ZDALNY` (dotąd wybierany przez

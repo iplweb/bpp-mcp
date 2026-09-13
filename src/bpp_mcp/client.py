@@ -30,6 +30,7 @@ from enum import Enum
 from typing import Any
 
 import httpx
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .auth import current_bearer
 from .catalog import PREFIKSY_CACHOWALNE
@@ -83,12 +84,18 @@ class TrybAuth(str, Enum):
         return cls.ZDALNY if transport == "http" else cls.LOKALNY
 
 
-class BppError(Exception):
+class BppError(ToolError):
     """Bazowy, czytelny błąd domenowy zwracany narzędziom MCP.
 
     Gdy błąd pochodzi z odpowiedzi HTTP (4xx/5xx), niesie ``status_code`` oraz
     (dla 4xx z ciałem JSON) zdeserializowany ``payload`` — narzędzia mapują je
     na sensowne komunikaty (np. 400 DjangoQL → pozycja błędu, 503 → „zawęź").
+
+    Dziedziczy po ``ToolError`` z SDK, bo tylko wtedy treść dociera do modelu.
+    Od ``mcp`` 2.1 każdy inny wyjątek z narzędzia SDK traktuje jak awarię:
+    model dostaje samo „Error executing tool <nazwa>", a serwer loguje
+    traceback. Dziedziczenie (zamiast konwersji na goły ``ToolError``
+    w wrapperach) zostawia hostom ``except BppError`` przed ``except Exception``.
     """
 
     def __init__(
