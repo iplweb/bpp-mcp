@@ -12,6 +12,7 @@ from importlib import resources
 from typing import Any
 
 from . import schemat
+from .auth import current_bearer
 from .catalog import (
     CATALOG,
     SLOWNIKI,
@@ -448,6 +449,15 @@ def _blad_zapytania(exc: BppError, *, stdio: bool = False) -> BppError:
             return BppError(
                 "Nie jesteś zalogowany lub token wygasł (401). Zaloguj się raz: "
                 "uruchom `bpp-mcp login` w terminalu, a potem ponów zapytanie.",
+                status_code=401,
+            )
+        if current_bearer() is None:
+            # Hostowany MCP przepuszcza anonima; „wygasły token" byłby
+            # nieprawdą — żadnego tokenu nie było.
+            return BppError(
+                "To narzędzie wymaga zalogowania (401), a to połączenie jest "
+                "anonimowe. Połącz klienta MCP z adresem wymagającym logowania "
+                "OAuth (w BPP: …/mcp/auth) i ponów zapytanie.",
                 status_code=401,
             )
         return BppError(

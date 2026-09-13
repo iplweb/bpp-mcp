@@ -13,7 +13,7 @@ import respx
 
 from bpp_mcp import tools
 from bpp_mcp.auth import set_current_bearer
-from bpp_mcp.client import BppClient, BppError
+from bpp_mcp.client import BppClient, BppError, TrybAuth
 from bpp_mcp.config import Config
 from conftest import API_ROOT
 
@@ -271,3 +271,33 @@ async def test_zapytanie_401_http_bez_podpowiedzi_login():
         assert "bpp-mcp login" not in str(ei.value)
     finally:
         set_current_bearer(None)
+
+
+@respx.mock
+async def test_zapytanie_401_bez_tokenu_w_procesie_mowi_o_logowaniu():
+    """Hostowany MCP (``W_PROCESIE``) przepuszcza anonima, a API odpowiada
+    401, bo zapytania DjangoQL wymagają zalogowania. Komunikat o
+    „nieprawidłowym lub wygasłym tokenie" wprowadzał w błąd — żadnego tokenu
+    nie było, więc nie ma czego odnawiać."""
+    cfg = Config(base_url="https://bpp.test", transport="http")
+    respx.get(url__regex=r".*/zapytanie/rekord/.*").mock(
+        return_value=httpx.Response(401, json={"detail": "x"})
+    )
+
+    async def wywolaj():
+        async with BppClient(cfg, tryb_auth=TrybAuth.W_PROCESIE, backoff_base=0.0) as c:
+            with pytest.raises(BppError) as ei:
+                await tools.zapytanie_rekord(c, "rok = 2026")
+        return ei.value
+
+    set_current_bearer(None)
+    bez_tokenu = await wywolaj()
+    set_current_bearer("DUMMY")
+    try:
+        zly_token = await wywolaj()
+    finally:
+        set_current_bearer(None)
+
+    assert bez_tokenu.status_code == 401
+    assert "zalogowania" in str(bez_tokenu)
+    assert str(bez_tokenu) != str(zly_token)
