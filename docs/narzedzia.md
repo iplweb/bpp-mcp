@@ -40,6 +40,12 @@ Dodatkowo serwer wystawia **prompt** MCP (nie narzędzie wykonujące):
 `typ` w `pobierz_rekord` / `lista_publikacji`: `wydawnictwo_ciagle`,
 `wydawnictwo_zwarte`, `patent`, `praca_doktorska`, `praca_habilitacyjna`.
 
+`typ` i `id` do `pobierz_rekord` bierzesz wprost z pozycji wyników
+`szukaj_publikacji`, `publikacje_autora`, `publikacje_jednostki` i
+`zapytanie_rekord` — każda pozycja ma `typ` oraz `pk` (tekstem). Na starszych
+instancjach BPP, których `recent_*` nie zwraca jeszcze `rekord_url`, pozycje
+`publikacje_*` mają zamiast `typ` tylko `content_type_id` + `pk`.
+
 `rodzaj` w `slownik`: `charakter_formalny`, `typ_kbn`, `jezyk`,
 `dyscyplina_naukowa`, `rodzaj_zrodla`, `poziom_wydawcy`, `funkcja_autora`,
 `tytul`, `czas_udostepnienia_openaccess`. Dane wolumenowe
