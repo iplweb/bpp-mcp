@@ -12,6 +12,7 @@ from importlib import resources
 from typing import Any
 
 from . import schemat
+from .auth import current_bearer
 from .catalog import (
     CATALOG,
     SLOWNIKI,
@@ -100,8 +101,8 @@ def _zakres_roku(rok_od: int | None, rok_do: int | None) -> dict[str, int]:
 
 
 def _dopisz_typ_i_pk(pozycja: dict[str, Any]) -> dict[str, Any]:
-    """Do pozycji ``/szukaj/`` dopisz rozłożony ``typ`` + ``pk`` (dla
-    późniejszego :func:`pobierz_rekord`), na bazie ``rekord_url``."""
+    """Dopisz ``typ`` + ``pk`` (tekstem) z ``rekord_url`` — wspólny kształt
+    pozycji publikacji, gotowy do :func:`pobierz_rekord`."""
     typ, pk = rozbij_rekord_url(pozycja.get("rekord_url"))
     if typ is not None:
         pozycja["typ"] = typ
@@ -110,11 +111,19 @@ def _dopisz_typ_i_pk(pozycja: dict[str, Any]) -> dict[str, Any]:
 
 
 def _znormalizuj_pozycje_recent(pozycja: dict[str, Any]) -> dict[str, Any]:
-    """Rozłóż ``id`` w formacie ``"(6, 123)"`` na ``content_type_id`` + ``pk``."""
+    """Pozycja ``recent_*``: ``typ`` + ``pk`` z ``rekord_url``, jak wszędzie.
+
+    Starsze BPP nie dokładają ``rekord_url`` — wtedy zostaje ``content_type_id``
+    + ``pk`` z ``id`` ``"(6, 123)"``. Typu z samego numeru ContentType nie
+    wyprowadzimy: numery są per-instancja.
+    """
+    _dopisz_typ_i_pk(pozycja)
+    if "typ" in pozycja:
+        return pozycja
     ct, pk = rozbij_tuple_id(pozycja.get("id"))
     if ct is not None:
         pozycja["content_type_id"] = ct
-        pozycja["pk"] = pk
+        pozycja["pk"] = str(pk)
     return pozycja
 
 
@@ -450,6 +459,15 @@ def _blad_zapytania(exc: BppError, *, stdio: bool = False) -> BppError:
                 "uruchom `bpp-mcp login` w terminalu, a potem ponów zapytanie.",
                 status_code=401,
             )
+        if current_bearer() is None:
+            # Hostowany MCP przepuszcza anonima; „wygasły token" byłby
+            # nieprawdą — żadnego tokenu nie było.
+            return BppError(
+                "To narzędzie wymaga zalogowania (401), a to połączenie jest "
+                "anonimowe. Połącz klienta MCP z adresem wymagającym logowania "
+                "OAuth (w BPP: …/mcp/auth) i ponów zapytanie.",
+                status_code=401,
+            )
         return BppError(
             "Nieprawidłowy lub wygasły token (401) — wymagane ponowne "
             "uwierzytelnienie OAuth (endpoint /o/ instancji BPP).",
@@ -492,6 +510,9 @@ async def _zapytanie(
             stdio = client.tryb_auth is TrybAuth.LOKALNY
             raise _blad_zapytania(exc, stdio=stdio) from exc
         raise
+    # Pozycje z ``rekord_url`` (zapytanie_rekord) dostają ``typ`` + ``pk``;
+    # autorzy go nie mają, więc zostają bez zmian.
+    wyniki = [_dopisz_typ_i_pk(dict(w)) for w in wyniki]
     return {
         "laczna_liczba": laczna,
         "zwrocono": len(wyniki),
